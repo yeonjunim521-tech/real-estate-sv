@@ -14,7 +14,7 @@ import urllib.parse
 import json
 import os
 
-PORT = 8000  # 웹 브라우저에서 접속할 포트 번호
+PORT = int(os.environ.get('PORT', 8000))  # Render 배포를 위한 포트 설정
 
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     """
@@ -91,7 +91,8 @@ if __name__ == '__main__':
     # 서버 파일이 있는 폴더를 기준으로 실행
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
-    server = http.server.HTTPServer(('', PORT), ProxyHandler)
+    # 호스트를 '0.0.0.0'으로 설정해야 외부(Render)에서 접근이 가능합니다.
+    server = http.server.HTTPServer(('0.0.0.0', PORT), ProxyHandler)
     print("")
     print("  ================================================")
     print("    [OK] Real Estate PRO Server Started!")

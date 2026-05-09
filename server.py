@@ -89,22 +89,20 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     # 서버 파일이 있는 폴더를 기준으로 실행
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
     
-    # 호스트를 '0.0.0.0'으로 설정해야 외부(Render)에서 접근이 가능합니다.
-    server = http.server.HTTPServer(('0.0.0.0', PORT), ProxyHandler)
-    print("")
-    print("  ================================================")
-    print("    [OK] Real Estate PRO Server Started!")
-    print("")
-    print(f"    Open browser: http://localhost:{PORT}")
-    print("")
-    print("    Press Ctrl+C to stop.")
-    print("  ================================================")
-    print("")
+    print(f"[서버] 현재 디렉토리: {script_dir}")
+    print(f"[서버] 설정된 포트: {PORT}")
     
     try:
+        # 호스트를 '0.0.0.0'으로 설정해야 외부(Render)에서 접근이 가능합니다.
+        server = http.server.HTTPServer(('0.0.0.0', PORT), ProxyHandler)
+        print("🚀 [성공] 부동산 프록시 서버가 정상적으로 시작되었습니다!")
+        print(f"🔗 접속 주소: http://0.0.0.0:{PORT}")
         server.serve_forever()
+    except Exception as e:
+        print(f"❌ [실패] 서버 시작 중 오류 발생: {e}")
     except KeyboardInterrupt:
-        print("\n[서버] 종료되었습니다.")
+        print("\n[서버] 사용자에 의해 종료되었습니다.")
         server.server_close()

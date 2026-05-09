@@ -59,8 +59,6 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             # 응답 시작
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Access-Control-Allow-Methods', 'GET')
             self.end_headers()
             self.wfile.write(data)
 

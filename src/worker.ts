@@ -10,6 +10,9 @@ const API_ENDPOINTS = {
 } as const
 
 type PropertyType = keyof typeof API_ENDPOINTS
+type RateLimiter = Pick<RateLimit, "limit">
+type CacheStore = Pick<Cache, "match" | "put">
+type WaitUntil = ExecutionContext["waitUntil"]
 
 function jsonError(message: string, status: number, headers?: HeadersInit): Response {
   return Response.json(
@@ -38,10 +41,49 @@ function isFiveDigitCode(value: string | null): value is string {
   return value !== null && /^\d{5}$/.test(value)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+async function isCacheableMolitResponse(response: Response): Promise<boolean> {
+  try {
+    const payload: unknown = await response.clone().json()
+    if (!isRecord(payload) || !isRecord(payload.response) || !isRecord(payload.response.header)) {
+      return false
+    }
+    const resultCode = payload.response.header.resultCode
+    return typeof resultCode === "string" && resultCode.startsWith("00")
+  } catch {
+    return false
+  }
+}
+
+function createCacheKey(
+  request: Request,
+  propertyType: PropertyType,
+  lawdCd: string,
+  dealYmd: string,
+): Request {
+  const cacheUrl = new URL(request.url)
+  cacheUrl.search = new URLSearchParams({ type: propertyType, lawdCd, dealYmd }).toString()
+  return new Request(cacheUrl.toString(), { method: "GET" })
+}
+
+async function readCachedResponse(cache: CacheStore, cacheKey: Request): Promise<Response | undefined> {
+  try {
+    return await cache.match(cacheKey)
+  } catch {
+    return undefined
+  }
+}
+
 export async function handleApiRequest(
   request: Request,
   serviceKey: string,
   fetchUpstream: typeof fetch = fetch,
+  rateLimiter?: RateLimiter,
+  cache?: CacheStore,
+  waitUntil?: WaitUntil,
 ): Promise<Response> {
   if (request.method !== "GET") {
     return jsonError("허용되지 않은 요청 방식입니다.", 405, { Allow: "GET" })
@@ -54,6 +96,26 @@ export async function handleApiRequest(
 
   if (!isPropertyType(propertyType) || !isFiveDigitCode(lawdCd) || !isValidMonth(dealYmd)) {
     return jsonError("요청 값을 확인해 주세요.", 400)
+  }
+
+  if (rateLimiter) {
+    try {
+      const clientIp = request.headers.get("CF-Connecting-IP") ?? "anonymous"
+      const { success } = await rateLimiter.limit({ key: `real-estate:${clientIp}` })
+      if (!success) {
+        return jsonError("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.", 429, {
+          "Retry-After": "60",
+        })
+      }
+    } catch {
+      return jsonError("요청 제한 서비스를 사용할 수 없습니다.", 503)
+    }
+  }
+
+  const cacheKey = createCacheKey(request, propertyType, lawdCd, dealYmd)
+  if (cache) {
+    const cachedResponse = await readCachedResponse(cache, cacheKey)
+    if (cachedResponse) return cachedResponse
   }
 
   const upstreamUrl = new URL(API_ENDPOINTS[propertyType])
@@ -70,6 +132,16 @@ export async function handleApiRequest(
     if (!upstreamResponse.ok) {
       return jsonError("국토부 API 요청이 실패했습니다.", upstreamResponse.status)
     }
+    if (cache && (await isCacheableMolitResponse(upstreamResponse))) {
+      const cacheResponse = upstreamResponse.clone()
+      cacheResponse.headers.set("Cache-Control", "s-maxage=300")
+      const cacheWrite = cache.put(cacheKey, cacheResponse).catch(() => undefined)
+      if (waitUntil) {
+        waitUntil(cacheWrite)
+      } else {
+        await cacheWrite
+      }
+    }
     return upstreamResponse
   } catch {
     return jsonError("국토부 API에 연결하지 못했습니다.", 502)
@@ -83,27 +155,53 @@ export async function routeRequest(
   serviceKey: string,
   fetchAsset: AssetFetcher,
   fetchUpstream: typeof fetch = fetch,
+  rateLimiter?: RateLimiter,
+  cache?: CacheStore,
+  waitUntil?: WaitUntil,
 ): Promise<Response> {
   const url = new URL(request.url)
   if (url.pathname === "/api/real-estate") {
-    return handleApiRequest(request, serviceKey, fetchUpstream)
+    return handleApiRequest(request, serviceKey, fetchUpstream, rateLimiter, cache, waitUntil)
   }
   return fetchAsset(request)
 }
 
-export function createWorkerHandler(fetchUpstream: typeof fetch = fetch) {
-  return (request: Request, serviceKey: string, fetchAsset: AssetFetcher) =>
-    routeRequest(request, serviceKey, fetchAsset, fetchUpstream)
+export function createWorkerHandler(
+  fetchUpstream: typeof fetch = fetch,
+  rateLimiter?: RateLimiter,
+  cache?: CacheStore,
+  waitUntil?: WaitUntil,
+) {
+  return (
+    request: Request,
+    serviceKey: string,
+    fetchAsset: AssetFetcher,
+    requestRateLimiter = rateLimiter,
+    requestCache = cache,
+    requestWaitUntil = waitUntil,
+  ) =>
+    routeRequest(
+      request,
+      serviceKey,
+      fetchAsset,
+      fetchUpstream,
+      requestRateLimiter,
+      requestCache,
+      requestWaitUntil,
+    )
 }
 
 const workerHandler = createWorkerHandler(fetch)
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     return workerHandler(
       request,
       env.DATA_GO_KR_SERVICE_KEY,
       (assetRequest) => env.ASSETS.fetch(assetRequest),
+      env.API_RATE_LIMITER,
+      caches.default,
+      ctx.waitUntil.bind(ctx),
     )
   },
 } satisfies ExportedHandler<Env>

@@ -36,6 +36,116 @@ describe("handleApiRequest", () => {
     expect(upstreamUrl.searchParams.get("numOfRows")).toBe("100")
   })
 
+  it("caches successful responses with a key that excludes the service key", async () => {
+    const entries = new Map<string, Response>()
+    const cache = {
+      match: vi.fn(async (request: Request) => entries.get(request.url)?.clone()),
+      put: vi.fn(async (request: Request, response: Response) => {
+        entries.set(request.url, response.clone())
+      }),
+    }
+    const fetchUpstream = vi.fn(async () =>
+      Response.json({ response: { header: { resultCode: "000" } } }),
+    )
+
+    const firstResponse = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+      undefined,
+      cache,
+    )
+
+    expect(firstResponse.status).toBe(200)
+    expect(cache.put).toHaveBeenCalledOnce()
+    const cacheKey = cache.put.mock.calls[0]?.[0]?.url ?? ""
+    expect(cacheKey).toContain("type=apt")
+    expect(cacheKey).not.toContain("serviceKey")
+    expect(cacheKey).not.toContain(secret)
+    expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
+
+    const secondFetch = vi.fn(async () => {
+      throw new Error("cache miss")
+    })
+    const secondResponse = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      secondFetch,
+      undefined,
+      cache,
+    )
+
+    expect(secondResponse.status).toBe(200)
+    expect(secondFetch).not.toHaveBeenCalled()
+  })
+
+  it("does not cache an application-level MOLIT error in an HTTP 200 response", async () => {
+    const cache = {
+      match: vi.fn(async () => undefined),
+      put: vi.fn(async () => undefined),
+    }
+    const fetchUpstream = vi.fn(async () =>
+      Response.json({ response: { header: { resultCode: "29000" } } }),
+    )
+
+    const response = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+      undefined,
+      cache,
+    )
+
+    expect(response.status).toBe(200)
+    expect(cache.put).not.toHaveBeenCalled()
+  })
+
+  it("returns 429 without calling upstream when the client exceeds the rate limit", async () => {
+    const fetchUpstream = vi.fn()
+    const rateLimiter = {
+      limit: vi.fn(async () => ({ success: false })),
+    }
+
+    const response = await handleApiRequest(
+      new Request("https://example.com/api/real-estate?type=apt&lawdCd=11680&dealYmd=202606", {
+        headers: { "CF-Connecting-IP": "203.0.113.10" },
+      }),
+      secret,
+      fetchUpstream,
+      rateLimiter,
+    )
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get("Retry-After")).toBe("60")
+    await expect(response.json()).resolves.toEqual({
+      error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+    })
+    expect(rateLimiter.limit).toHaveBeenCalledWith({ key: "real-estate:203.0.113.10" })
+    expect(fetchUpstream).not.toHaveBeenCalled()
+  })
+
+  it("returns 503 without calling upstream when the rate limiter fails", async () => {
+    const fetchUpstream = vi.fn()
+    const rateLimiter = {
+      limit: vi.fn(async () => {
+        throw new Error("rate limiter unavailable")
+      }),
+    }
+
+    const response = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+      rateLimiter,
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: "요청 제한 서비스를 사용할 수 없습니다.",
+    })
+    expect(fetchUpstream).not.toHaveBeenCalled()
+  })
+
   it("sanitizes non-OK upstream responses while preserving their status", async () => {
     const fetchUpstream = vi.fn(async () =>
       new Response(`serviceKey=${secret}&error=upstream details`, { status: 503 }),
@@ -115,6 +225,27 @@ describe("routeRequest", () => {
     expect(response.status).toBe(200)
     expect(fetchUpstream).toHaveBeenCalledOnce()
     expect(fetchAsset).not.toHaveBeenCalled()
+  })
+
+  it("applies the injected rate limiter before upstream access", async () => {
+    const fetchAsset = vi.fn(async () => new Response("asset"))
+    const fetchUpstream = vi.fn(async () => Response.json({ ok: true }))
+    const rateLimiter = {
+      limit: vi.fn(async () => ({ success: true })),
+    }
+    const handler = createWorkerHandler(fetchUpstream, rateLimiter)
+
+    const response = await handler(
+      new Request("https://example.com/api/real-estate?type=apt&lawdCd=11680&dealYmd=202606", {
+        headers: { "CF-Connecting-IP": "203.0.113.10" },
+      }),
+      secret,
+      fetchAsset,
+    )
+
+    expect(response.status).toBe(200)
+    expect(rateLimiter.limit).toHaveBeenCalledWith({ key: "real-estate:203.0.113.10" })
+    expect(fetchUpstream).toHaveBeenCalledOnce()
   })
 
   it("serves non-API requests from the static assets binding", async () => {

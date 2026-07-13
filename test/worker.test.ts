@@ -79,6 +79,28 @@ describe("handleApiRequest", () => {
     expect(secondFetch).not.toHaveBeenCalled()
   })
 
+  it("caches a successful response returned by fetch without mutating immutable headers", async () => {
+    const cache = {
+      match: vi.fn(async () => undefined),
+      put: vi.fn(async (_request: Request, _response: Response) => undefined),
+    }
+    const fetchUpstream = vi.fn(async () =>
+      fetch("data:application/json,%7B%22response%22%3A%7B%22header%22%3A%7B%22resultCode%22%3A%22000%22%7D%7D%7D"),
+    )
+
+    const response = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+      undefined,
+      cache,
+    )
+
+    expect(response.status).toBe(200)
+    expect(cache.put).toHaveBeenCalledOnce()
+    expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
+  })
+
   it("does not cache an application-level MOLIT error in an HTTP 200 response", async () => {
     const cache = {
       match: vi.fn(async () => undefined),

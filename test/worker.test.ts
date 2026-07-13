@@ -45,7 +45,9 @@ describe("handleApiRequest", () => {
       }),
     }
     const fetchUpstream = vi.fn(async () =>
-      Response.json({ response: { header: { resultCode: "000" } } }),
+      new Response(JSON.stringify({ response: { header: { resultCode: "000" } } }), {
+        headers: { "Content-Type": "application/json", "Set-Cookie": "session=test" },
+      }),
     )
 
     const firstResponse = await handleApiRequest(
@@ -63,6 +65,7 @@ describe("handleApiRequest", () => {
     expect(cacheKey).not.toContain("serviceKey")
     expect(cacheKey).not.toContain(secret)
     expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
+    expect(cache.put.mock.calls[0]?.[1]?.headers.get("Set-Cookie")).toBeNull()
 
     const secondFetch = vi.fn(async () => {
       throw new Error("cache miss")

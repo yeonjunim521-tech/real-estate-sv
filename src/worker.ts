@@ -134,6 +134,7 @@ export async function handleApiRequest(
     }
     if (cache && (await isCacheableMolitResponse(upstreamResponse))) {
       const cacheResponse = new Response(upstreamResponse.clone().body, upstreamResponse)
+      cacheResponse.headers.delete("Set-Cookie")
       cacheResponse.headers.set("Cache-Control", "s-maxage=300")
       const cacheWrite = cache.put(cacheKey, cacheResponse).catch(() => undefined)
       if (waitUntil) {

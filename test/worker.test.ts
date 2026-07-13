@@ -45,9 +45,7 @@ describe("handleApiRequest", () => {
       }),
     }
     const fetchUpstream = vi.fn(async () =>
-      new Response(JSON.stringify({ response: { header: { resultCode: "000" } } }), {
-        headers: { "Content-Type": "application/json", "Set-Cookie": "session=test" },
-      }),
+      Response.json({ response: { header: { resultCode: "000" } } }),
     )
 
     const firstResponse = await handleApiRequest(
@@ -65,7 +63,6 @@ describe("handleApiRequest", () => {
     expect(cacheKey).not.toContain("serviceKey")
     expect(cacheKey).not.toContain(secret)
     expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
-    expect(cache.put.mock.calls[0]?.[1]?.headers.get("Set-Cookie")).toBeNull()
 
     const secondFetch = vi.fn(async () => {
       throw new Error("cache miss")
@@ -102,6 +99,29 @@ describe("handleApiRequest", () => {
     expect(response.status).toBe(200)
     expect(cache.put).toHaveBeenCalledOnce()
     expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
+  })
+
+  it("does not cache a successful response that contains Set-Cookie", async () => {
+    const cache = {
+      match: vi.fn(async () => undefined),
+      put: vi.fn(async (_request: Request, _response: Response) => undefined),
+    }
+    const fetchUpstream = vi.fn(async () =>
+      new Response(JSON.stringify({ response: { header: { resultCode: "000" } } }), {
+        headers: { "Content-Type": "application/json", "Set-Cookie": "session=test" },
+      }),
+    )
+
+    const response = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+      undefined,
+      cache,
+    )
+
+    expect(response.status).toBe(200)
+    expect(cache.put).not.toHaveBeenCalled()
   })
 
   it("does not cache an application-level MOLIT error in an HTTP 200 response", async () => {

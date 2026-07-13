@@ -132,9 +132,12 @@ export async function handleApiRequest(
     if (!upstreamResponse.ok) {
       return jsonError("국토부 API 요청이 실패했습니다.", upstreamResponse.status)
     }
-    if (cache && (await isCacheableMolitResponse(upstreamResponse))) {
+    if (
+      cache &&
+      !upstreamResponse.headers.has("Set-Cookie") &&
+      (await isCacheableMolitResponse(upstreamResponse))
+    ) {
       const cacheResponse = new Response(upstreamResponse.clone().body, upstreamResponse)
-      cacheResponse.headers.delete("Set-Cookie")
       cacheResponse.headers.set("Cache-Control", "s-maxage=300")
       const cacheWrite = cache.put(cacheKey, cacheResponse).catch(() => undefined)
       if (waitUntil) {

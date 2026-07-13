@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.wrangler-dist/
+.dev.vars
+.env*
+
+# Netlify 첨부 원본에는 폐기 예정 API 키가 포함되어 있어 커밋하지 않습니다.
+/public/
+/worker-configuration.d.ts

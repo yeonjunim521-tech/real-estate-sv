@@ -1,0 +1,648 @@
+/**
+ * 부동산 분석 플랫폼 PRO v14 (근본 원인 수정 완료)
+ *
+ * [핵심 수정] API 응답 필드가 한글(아파트, 거래금액)이 아니라
+ *             영문(aptNm, dealAmount)이었음 → 전면 수정 완료
+ * [핵심 수정] Cloudflare Worker API로 프런트엔드와 백엔드 통합
+ */
+
+// 국토부 API 키는 Cloudflare Worker Secret에서만 사용합니다.
+const API_ENDPOINT = '/api/real-estate';
+
+// 1. 전국 17개 시/도 + 주요 시/군/구 법정동코드 (행정안전부 기준)
+// ===================================================================
+const REGION_DATA = {
+    "11": {
+        name: "서울특별시",
+        guguns: [
+            { code: "11680", name: "강남구" }, { code: "11740", name: "강동구" }, { code: "11305", name: "강북구" }, { code: "11500", name: "강서구" },
+            { code: "11620", name: "관악구" }, { code: "11215", name: "광진구" }, { code: "11530", name: "구로구" }, { code: "11545", name: "금천구" },
+            { code: "11350", name: "노원구" }, { code: "11320", name: "도봉구" }, { code: "11230", name: "동대문구" }, { code: "11590", name: "동작구" },
+            { code: "11440", name: "마포구" }, { code: "11410", name: "서대문구" }, { code: "11650", name: "서초구" }, { code: "11200", name: "성동구" },
+            { code: "11290", name: "성북구" }, { code: "11710", name: "송파구" }, { code: "11470", name: "양천구" }, { code: "11560", name: "영등포구" },
+            { code: "11170", name: "용산구" }, { code: "11380", name: "은평구" }, { code: "11110", name: "종로구" }, { code: "11140", name: "중구" },
+            { code: "11260", name: "중랑구" }
+        ]
+    },
+    "26": {
+        name: "부산광역시",
+        guguns: [
+            { code: "26110", name: "중구" }, { code: "26140", name: "서구" }, { code: "26170", name: "동구" }, { code: "26200", name: "영도구" },
+            { code: "26230", name: "부산진구" }, { code: "26260", name: "동래구" }, { code: "26290", name: "남구" }, { code: "26320", name: "북구" },
+            { code: "26350", name: "해운대구" }, { code: "26380", name: "사하구" }, { code: "26410", name: "금정구" }, { code: "26440", name: "강서구" },
+            { code: "26470", name: "연제구" }, { code: "26500", name: "수영구" }, { code: "26530", name: "사상구" }, { code: "26710", name: "기장군" }
+        ]
+    },
+    "27": {
+        name: "대구광역시",
+        guguns: [
+            { code: "27110", name: "중구" }, { code: "27140", name: "동구" }, { code: "27170", name: "서구" }, { code: "27200", name: "남구" },
+            { code: "27230", name: "북구" }, { code: "27260", name: "수성구" }, { code: "27290", name: "달서구" }, { code: "27710", name: "달성군" }
+        ]
+    },
+    "28": {
+        name: "인천광역시",
+        guguns: [
+            { code: "28110", name: "중구" }, { code: "28140", name: "동구" }, { code: "28177", name: "미추홀구" }, { code: "28185", name: "연수구" },
+            { code: "28200", name: "남동구" }, { code: "28237", name: "부평구" }, { code: "28245", name: "계양구" }, { code: "28260", name: "서구" },
+            { code: "28710", name: "강화군" }
+        ]
+    },
+    "29": {
+        name: "광주광역시",
+        guguns: [
+            { code: "29110", name: "동구" }, { code: "29140", name: "서구" }, { code: "29155", name: "남구" },
+            { code: "29170", name: "북구" }, { code: "29200", name: "광산구" }
+        ]
+    },
+    "30": {
+        name: "대전광역시",
+        guguns: [
+            { code: "30110", name: "동구" }, { code: "30140", name: "중구" }, { code: "30170", name: "서구" },
+            { code: "30200", name: "유성구" }, { code: "30230", name: "대덕구" }
+        ]
+    },
+    "31": {
+        name: "울산광역시",
+        guguns: [
+            { code: "31110", name: "중구" }, { code: "31140", name: "남구" }, { code: "31170", name: "동구" },
+            { code: "31200", name: "북구" }, { code: "31710", name: "울주군" }
+        ]
+    },
+    "36": {
+        name: "세종특별자치시",
+        guguns: [{ code: "36110", name: "세종특별자치시" }]
+    },
+    "41": {
+        name: "경기도",
+        guguns: [
+            { code: "41111", name: "수원시 장안구" }, { code: "41113", name: "수원시 권선구" }, { code: "41115", name: "수원시 팔달구" }, { code: "41117", name: "수원시 영통구" },
+            { code: "41131", name: "성남시 수정구" }, { code: "41133", name: "성남시 중원구" }, { code: "41135", name: "성남시 분당구" },
+            { code: "41150", name: "의정부시" }, { code: "41171", name: "안양시 만안구" }, { code: "41173", name: "안양시 동안구" },
+            { code: "41190", name: "부천시" }, { code: "41210", name: "광명시" }, { code: "41220", name: "평택시" },
+            { code: "41271", name: "안산시 상록구" }, { code: "41273", name: "안산시 단원구" },
+            { code: "41281", name: "고양시 덕양구" }, { code: "41285", name: "고양시 일산동구" }, { code: "41287", name: "고양시 일산서구" },
+            { code: "41290", name: "과천시" }, { code: "41310", name: "구리시" }, { code: "41360", name: "남양주시" },
+            { code: "41370", name: "오산시" }, { code: "41390", name: "시흥시" }, { code: "41410", name: "군포시" },
+            { code: "41430", name: "의왕시" }, { code: "41450", name: "하남시" },
+            { code: "41461", name: "용인시 처인구" }, { code: "41463", name: "용인시 기흥구" }, { code: "41465", name: "용인시 수지구" },
+            { code: "41480", name: "파주시" }, { code: "41500", name: "이천시" }, { code: "41550", name: "안성시" },
+            { code: "41570", name: "김포시" }, { code: "41590", name: "화성시" }, { code: "41610", name: "광주시" },
+            { code: "41630", name: "양주시" }, { code: "41650", name: "포천시" }
+        ]
+    },
+    "42": {
+        name: "강원특별자치도",
+        guguns: [
+            { code: "42110", name: "춘천시" }, { code: "42130", name: "원주시" }, { code: "42150", name: "강릉시" },
+            { code: "42170", name: "동해시" }, { code: "42190", name: "태백시" }, { code: "42210", name: "속초시" }, { code: "42230", name: "삼척시" }
+        ]
+    },
+    "43": {
+        name: "충청북도",
+        guguns: [
+            { code: "43111", name: "청주시 상당구" }, { code: "43112", name: "청주시 서원구" }, { code: "43113", name: "청주시 흥덕구" }, { code: "43114", name: "청주시 청원구" },
+            { code: "43130", name: "충주시" }, { code: "43150", name: "제천시" }
+        ]
+    },
+    "44": {
+        name: "충청남도",
+        guguns: [
+            { code: "44131", name: "천안시 동남구" }, { code: "44133", name: "천안시 서북구" },
+            { code: "44150", name: "공주시" }, { code: "44180", name: "보령시" }, { code: "44200", name: "아산시" },
+            { code: "44210", name: "서산시" }, { code: "44230", name: "논산시" }, { code: "44270", name: "당진시" }
+        ]
+    },
+    "45": {
+        name: "전북특별자치도",
+        guguns: [
+            { code: "45111", name: "전주시 완산구" }, { code: "45113", name: "전주시 덕진구" },
+            { code: "45130", name: "군산시" }, { code: "45140", name: "익산시" }, { code: "45180", name: "정읍시" }, { code: "45190", name: "남원시" }
+        ]
+    },
+    "46": {
+        name: "전라남도",
+        guguns: [
+            { code: "46110", name: "목포시" }, { code: "46130", name: "여수시" }, { code: "46150", name: "순천시" },
+            { code: "46170", name: "나주시" }, { code: "46230", name: "광양시" }
+        ]
+    },
+    "47": {
+        name: "경상북도",
+        guguns: [
+            { code: "47111", name: "포항시 남구" }, { code: "47113", name: "포항시 북구" },
+            { code: "47130", name: "경주시" }, { code: "47150", name: "김천시" }, { code: "47170", name: "안동시" },
+            { code: "47190", name: "구미시" }, { code: "47210", name: "영주시" }, { code: "47230", name: "영천시" }
+        ]
+    },
+    "48": {
+        name: "경상남도",
+        guguns: [
+            { code: "48121", name: "창원시 의창구" }, { code: "48123", name: "창원시 성산구" },
+            { code: "48125", name: "창원시 마산합포구" }, { code: "48127", name: "창원시 마산회원구" }, { code: "48129", name: "창원시 진해구" },
+            { code: "48170", name: "진주시" }, { code: "48220", name: "통영시" }, { code: "48240", name: "사천시" },
+            { code: "48250", name: "김해시" }, { code: "48330", name: "양산시" }
+        ]
+    },
+    "50": {
+        name: "제주특별자치도",
+        guguns: [{ code: "50110", name: "제주시" }, { code: "50130", name: "서귀포시" }]
+    }
+};
+
+// ===================================================================
+// 2. 유형별 한글 이름
+const TYPE_NAMES = {
+    apt: "아파트", rhous: "연립/다세대", shous: "단독/다가구", office: "오피스텔",
+    comm: "상업업무용", fact: "공장/창고", land: "토지", right: "분양/입주권"
+};
+
+// ===================================================================
+// 3. DOM 요소 캐싱 및 전역 상태
+// ===================================================================
+const sidoSelect = document.getElementById('sido-select');
+const gugunSelect = document.getElementById('gugun-select');
+const dongSelect = document.getElementById('dong-select');
+const dateSelect = document.getElementById('date-select');
+const fetchBtn = document.getElementById('fetch-live-btn');
+const analysisBody = document.getElementById('analysis-body');
+const updateTime = document.getElementById('update-time');
+
+// 페이지네이션 및 상태 변수
+let globalData = [];
+let filteredData = [];
+let currentPage = 1;
+let itemsPerPage = 30;
+
+const paginationContainer = document.getElementById('pagination-container');
+const pageSizeSelect = document.getElementById('page-size');
+const prevPageBtn = document.getElementById('prev-page-btn');
+const nextPageBtn = document.getElementById('next-page-btn');
+const pageInfo = document.getElementById('page-info');
+
+// 히스토리 요소
+const historyList = document.getElementById('history-list');
+const clearHistoryBtn = document.getElementById('clear-history-btn');
+
+// ===================================================================
+// 4. 날짜 자동 생성 (현재 시점 기준)
+// ===================================================================
+function initDateOptions() {
+    const now = new Date(); // 항상 현재 시점
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const opt = document.createElement('option');
+        opt.value = `${yyyy}${mm}`;
+        opt.innerText = `${yyyy}년 ${mm}월`;
+        // 전월을 기본값으로 (실거래 신고 지연 30일 고려)
+        if (i === 1) opt.selected = true;
+        dateSelect.appendChild(opt);
+    }
+}
+
+// ===================================================================
+// 5. 시/도 선택 → 시/군/구 동적 로딩
+// ===================================================================
+sidoSelect.addEventListener('change', () => {
+    const sidoCode = sidoSelect.value;
+    gugunSelect.innerHTML = '<option value="">시/군/구 선택</option>';
+    if (sidoCode && REGION_DATA[sidoCode]) {
+        REGION_DATA[sidoCode].guguns.forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g.code;
+            opt.innerText = g.name;
+            gugunSelect.appendChild(opt);
+        });
+    }
+});
+
+// ===================================================================
+// 6. [핵심] API 호출 로직 (영문 필드명 + Cloudflare Worker)
+// ===================================================================
+
+/**
+ * 단일 유형의 데이터를 API에서 가져오는 함수
+ *
+ * ⭐ 핵심 수정: API 응답 필드가 한글이 아니라 영문입니다!
+ * - aptNm (아파트명), dealAmount (거래금액), excluUseAr (전용면적)
+ * - dealYear (년), dealMonth (월), dealDay (일)
+ * - umdNm (법정동명)
+ */
+async function fetchSingleType(type, lawdCd, dealYmd) {
+    if (!TYPE_NAMES[type]) return [];
+
+    const params = new URLSearchParams({ type, lawdCd, dealYmd });
+    const url = `${API_ENDPOINT}?${params.toString()}`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[${type}] HTTP 에러 ${response.status}:`, errorText);
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const resData = await response.json();
+
+        // API 에러 체크
+        // ⭐ 핵심 수정: resultCode가 "00"이 아니라 "000"으로 오는 경우가 있음!
+        //    따라서 startsWith("00")으로 체크해야 정상 동작합니다.
+        const resultCode = resData.response?.header?.resultCode || '';
+        if (!resultCode.startsWith("00")) {
+            console.warn(`[${type}] API 오류 (코드: ${resultCode}): ${resData.response?.header?.resultMsg}`);
+            return [];
+        }
+
+        const items = resData.response?.body?.items?.item;
+        if (!items) return [];
+
+        const list = Array.isArray(items) ? items : [items];
+
+        // ⭐ 영문 필드명을 사용하여 데이터 파싱
+        // 각 유형별로 실제 API가 반환하는 필드명이 모두 다름! (직접 검증 완료)
+        return list.map(item => {
+            // 매물 이름: 유형별로 필드명이 다름
+            // - apt(아파트): aptNm
+            // - rhous(연립다세대): mhouseNm
+            // - shous(단독다가구): 별도 필드 없음 → 법정동+지번 사용
+            // - office(오피스텔): offiNm
+            // - comm(상업업무용): 별도 필드 없음 → 법정동+지번 사용
+            // - land(토지): 별도 필드 없음 → 법정동+지번 사용
+            // - right(분양입주권): aptNm
+            // 주소 복구 로직 (별표 마스킹 우회 시도)
+            let displayJibun = String(item.jibun || '');
+            const bonbun = item.bonbun ? parseInt(item.bonbun) : '';
+            const bubun = item.bubun ? parseInt(item.bubun) : '';
+            
+            // 만약 jibun에 별표가 있고 본번 정보가 있다면 본번-부번으로 주소 재구성
+            if (displayJibun.includes('*') && bonbun) {
+                displayJibun = bubun ? `${bonbun}-${bubun}` : `${bonbun}`;
+            }
+
+            const name = item.aptNm       // 아파트, 분양입주권
+                || item.mhouseNm    // 연립다세대
+                || item.offiNm      // 오피스텔
+                || `${item.umdNm || ''} ${displayJibun}`.trim()  // 나머지 (법정동 + 지번)
+                || "매물정보 없음";
+
+            // 전용면적: 유형별로 필드명이 모두 다름!
+            // - apt(아파트): excluUseAr (전용면적)
+            // - rhous(연립다세대): excluUseAr (전용면적)
+            // - shous(단독다가구): totalFloorAr (연면적), plottageAr (대지면적)
+            // - office(오피스텔): excluUseAr (전용면적)
+            // - comm(상업업무용): buildingAr (건물면적), plottageAr (대지면적)
+            // - land(토지): dealArea (거래면적)
+            // - right(분양입주권): excluUseAr (전용면적)
+            // - fact(공장): buildingAr 또는 plottageAr
+            // 면적 종류 및 값 판별
+            let size = 0;
+            let sizeLabel = "면적";
+
+            // 1. 전용면적이 명시되어 있으면 최우선 (아파트, 오피스텔 등)
+            if (item.excluUseAr) { 
+                size = item.excluUseAr; 
+                sizeLabel = "전용"; 
+            } 
+            // 2. 상업업무용(comm)의 경우 buildingAr가 사실상 구분상가의 전용면적임
+            else if (type === 'comm' && item.buildingAr) {
+                size = item.buildingAr;
+                // 건물유형이 '집합'이면 구분상가이므로 [전용], 아니면 [건물]로 표시
+                const isJiphap = (item.buildingType || "").includes("집합");
+                sizeLabel = isJiphap ? "전용" : "건물";
+            }
+            else if (item.totalFloorAr) { size = item.totalFloorAr; sizeLabel = "연면적"; }
+            else if (item.buildingAr) { size = item.buildingAr; sizeLabel = "건물"; }
+            else if (item.dealArea) { size = item.dealArea; sizeLabel = "거래"; }
+            else if (item.plottageAr) { size = item.plottageAr; sizeLabel = "대지"; }
+            else { size = 0; sizeLabel = "면적"; }
+
+            // 건물 용도/유형 정보 (있으면 표시)
+            const buildingType = item.buildingType || item.buildingUse || item.houseType || '';
+
+            // 거래금액: 쉼표 포함 문자열 → 숫자로 변환
+            const rawPrice = String(item.dealAmount || '0').replace(/,/g, '').trim();
+            const price = parseInt(rawPrice) || 0;
+
+            // 계약일자: 년, 월, 일 조합
+            const year = item.dealYear || '0000';
+            const month = String(item.dealMonth || '01').padStart(2, '0');
+            const day = String(item.dealDay || '01').padStart(2, '0');
+
+            // 층수 포맷팅 (지하층 표시)
+            let floorText = item.floor || '-';
+            if (floorText !== '-') {
+                const floorNum = parseInt(floorText);
+                if (!isNaN(floorNum)) {
+                    if (floorNum < 0) {
+                        floorText = `지하 ${Math.abs(floorNum)}층`;
+                    } else {
+                        floorText = `${floorNum}층`;
+                    }
+                } else if (typeof floorText === 'string' && floorText.toUpperCase().startsWith('B')) {
+                    // "B1" 같은 문자열 대응
+                    floorText = `지하 ${floorText.substring(1)}층`;
+                } else {
+                    floorText = `${floorText}층`;
+                }
+            }
+
+            return {
+                name: name,
+                type: type,
+                typeName: TYPE_NAMES[type] || type,
+                size: String(size),
+                sizeLabel: sizeLabel, // 면적 종류 추가
+                price: price,
+                date: `${year}-${month}-${day}`,
+                floor: floorText,                   // 층수 (포맷팅됨)
+                buildYear: item.buildYear || '-',   // 건축년도
+                umdNm: item.umdNm || '',            // 법정동명
+                jibun: displayJibun,                // 복구된 지번 적용
+                buildingType: buildingType           // 건물 용도
+            };
+        });
+    } catch (e) {
+        console.error(`[${type}] 데이터 수집 실패:`, e);
+        return [];
+    }
+}
+
+/**
+ * 체크된 모든 유형에 대해 병렬 API 호출 후 결과 병합
+ */
+async function getMultiTypeData() {
+    const lawdCd = gugunSelect.value;
+    const dealYmd = dateSelect.value;
+    const selectedCheckboxes = document.querySelectorAll('input[name="type"]:checked');
+
+    if (!lawdCd) { alert("분석할 지역을 먼저 선택해 주세요!"); return null; }
+    if (selectedCheckboxes.length === 0) { alert("부동산 유형을 최소 하나 선택해 주세요!"); return null; }
+
+    const selectedTypes = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+    try {
+        const results = await Promise.allSettled(
+            selectedTypes.map(type => fetchSingleType(type, lawdCd, dealYmd))
+        );
+
+        let combined = [];
+
+        results.forEach((result, i) => {
+            if (result.status === 'fulfilled' && result.value) {
+                combined = [...combined, ...result.value];
+                console.log(`[${selectedTypes[i]}] ${result.value.length}건 수집 완료`);
+            } else if (result.status === 'rejected') {
+                console.error(`[${selectedTypes[i]}] 실패:`, result.reason);
+            }
+        });
+
+        // 계약일 기준 최신순 정렬
+        combined.sort((a, b) => new Date(b.date) - new Date(a.date));
+        return combined;
+
+    } catch (e) {
+        alert("⚠️ [연동 오류]\n" + e.message);
+        return null;
+    }
+}
+
+// ===================================================================
+// 7. 인라인 분석 기능 (평당가 즉시 산출)
+// ===================================================================
+function runInlineAnalysis(btn, size, price, label = '면적') {
+    const row = btn.closest('tr');
+    const target = row.querySelector('.analysis-target');
+    const sizeNum = parseFloat(size);
+
+    if (sizeNum <= 0 || isNaN(sizeNum)) {
+        target.innerHTML = '<span style="color: #ef4444; font-size: 0.85rem;">면적 정보 없음</span>';
+        return;
+    }
+
+    const py = (sizeNum * 0.3025).toFixed(1);
+    const ppp = Math.round(price / (sizeNum * 0.3025));
+
+    target.innerHTML = `
+        <div class="analysis-detail">
+            <span class="area-badge" title="계산기준: ${label}">${label} ${size}㎡ (${py}평)</span>
+            <span class="price-col">평당 ${ppp.toLocaleString()}만원</span>
+            <button class="small-reset-btn" onclick="resetRow(this, '${size}', ${price}, '${label}')">↩</button>
+        </div>
+    `;
+}
+
+function resetRow(btn, size, price, label) {
+    btn.closest('.analysis-target').innerHTML =
+        `<button class="analyze-btn" onclick="runInlineAnalysis(this, '${size}', ${price}, '${label}')">평당가 산출</button>`;
+}
+
+// ===================================================================
+// 8. 렌더링 및 페이지네이션
+// ===================================================================
+function renderTable() {
+    if (filteredData.length === 0) {
+        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state">조회된 데이터가 없습니다. 다른 유형/지역/날짜를 선택해 보세요.</td></tr>`;
+        paginationContainer.style.display = 'none';
+        return;
+    }
+
+    const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIdx = (currentPage - 1) * itemsPerPage;
+    const endIdx = startIdx + itemsPerPage;
+    const pageData = filteredData.slice(startIdx, endIdx);
+
+    analysisBody.innerHTML = pageData.map(item => `
+        <tr>
+            <td>
+                <strong style="display:block; margin-bottom: 2px;">${item.name}</strong>
+                <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 4px;">
+                    ${item.umdNm} ${item.jibun} ${item.floor !== '-' ? `<span style="margin-left:5px; color:#ccc;">|</span> ${item.floor}` : ''}
+                </div>
+                <span class="type-tag type-${item.type}">${item.typeName}</span>
+            </td>
+            <td style="font-weight:700; color: var(--accent)">${item.price.toLocaleString()}만원</td>
+            <td>${item.date}</td>
+            <td class="analysis-target">
+                <button class="analyze-btn" onclick="runInlineAnalysis(this, '${item.size}', ${item.price}, '${item.sizeLabel}')">평당가 산출</button>
+            </td>
+        </tr>
+    `).join('');
+
+    // 페이지네이션 UI 업데이트
+    paginationContainer.style.display = 'flex';
+    pageInfo.innerText = `${currentPage} / ${totalPages} (총 ${filteredData.length}건)`;
+
+    prevPageBtn.disabled = currentPage === 1;
+    nextPageBtn.disabled = currentPage === totalPages;
+}
+
+pageSizeSelect.addEventListener('change', (e) => {
+    itemsPerPage = parseInt(e.target.value);
+    currentPage = 1;
+    renderTable();
+});
+
+prevPageBtn.addEventListener('click', () => {
+    if (currentPage > 1) {
+        currentPage--;
+        renderTable();
+    }
+});
+
+nextPageBtn.addEventListener('click', () => {
+    const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+    if (currentPage < totalPages) {
+        currentPage++;
+        renderTable();
+    }
+});
+
+dongSelect.addEventListener('change', () => {
+    const selectedDong = dongSelect.value;
+    if (selectedDong) {
+        filteredData = globalData.filter(item => item.umdNm === selectedDong);
+    } else {
+        filteredData = [...globalData];
+    }
+    currentPage = 1;
+    renderTable();
+});
+
+// ===================================================================
+// 9. 최근 분석 리포트 (LocalStorage)
+// ===================================================================
+function saveHistory(data, lawdCd, dealYmd, selectedTypes) {
+    if (!data || data.length === 0) return;
+
+    // 시도/구군 이름 찾기
+    const sidoName = sidoSelect.options[sidoSelect.selectedIndex].text;
+    const gugunName = gugunSelect.options[gugunSelect.selectedIndex].text;
+    const locationName = `${sidoName} ${gugunName}`;
+
+    const typesText = selectedTypes.map(t => TYPE_NAMES[t]).join(', ');
+
+    const historyItem = {
+        id: Date.now(),
+        title: locationName,
+        desc: `${dealYmd.substring(0, 4)}년 ${dealYmd.substring(4, 6)}월 | ${typesText}`,
+        count: data.length,
+        lawdCd: lawdCd,
+        sidoCd: sidoSelect.value,
+        dealYmd: dealYmd,
+        selectedTypes: selectedTypes,
+        timestamp: new Date().getTime()
+    };
+
+    let history = JSON.parse(localStorage.getItem('realEstateHistory') || '[]');
+    // 중복 조건 제거 후 맨 앞에 추가, 최대 10개
+    history.unshift(historyItem);
+    if (history.length > 10) history = history.slice(0, 10);
+
+    localStorage.setItem('realEstateHistory', JSON.stringify(history));
+
+    // 실제 데이터는 용량이 크므로 세션에 저장하거나 다시 조회하게 유도할 수 있지만, 
+    // 여기서는 화면 전환용으로 데이터를 잠시 보관하는 용도(또는 재조회)로 사용합니다.
+    // 캐시 용량 제한상 파라미터만 저장하고 클릭 시 재조회하도록 구현.
+    renderHistory();
+}
+
+function renderHistory() {
+    const history = JSON.parse(localStorage.getItem('realEstateHistory') || '[]');
+
+    if (history.length === 0) {
+        historyList.innerHTML = '<p style="color:var(--text-dim); padding: 1rem;">저장된 리포트가 없습니다.</p>';
+        return;
+    }
+
+    historyList.innerHTML = history.map(item => `
+        <div class="history-card" onclick="loadHistoryItem(${item.sidoCd}, '${item.lawdCd}', '${item.dealYmd}', '${item.selectedTypes.join(',')}')">
+            <h4>${item.title}</h4>
+            <p>${item.desc}</p>
+            <span class="count-badge">${item.count}건</span>
+        </div>
+    `).join('');
+}
+
+window.loadHistoryItem = function (sidoCd, lawdCd, dealYmd, typesStr) {
+    sidoSelect.value = sidoCd;
+    sidoSelect.dispatchEvent(new Event('change'));
+
+    setTimeout(() => {
+        gugunSelect.value = lawdCd;
+        dateSelect.value = dealYmd;
+
+        const types = typesStr.split(',');
+        document.querySelectorAll('input[name="type"]').forEach(cb => {
+            cb.checked = types.includes(cb.value);
+        });
+
+        fetchBtn.click();
+    }, 100);
+};
+
+clearHistoryBtn.addEventListener('click', () => {
+    localStorage.removeItem('realEstateHistory');
+    renderHistory();
+});
+
+// ===================================================================
+// 10. 조회 버튼 이벤트 (멀티 필터 결과 렌더링)
+// ===================================================================
+fetchBtn.addEventListener('click', async () => {
+    fetchBtn.disabled = true;
+    fetchBtn.innerText = "전국 데이터 통합 수집 중...";
+    analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state">선택된 유형의 실거래 데이터를 수집하고 있습니다...</td></tr>`;
+    paginationContainer.style.display = 'none';
+
+    const data = await getMultiTypeData();
+
+    if (data !== null) {
+        globalData = data;
+        filteredData = [...data];
+        currentPage = 1;
+
+        // 행정동(umdNm) 고유 목록 추출 및 옵션 생성
+        const dongs = [...new Set(data.map(item => item.umdNm).filter(Boolean))].sort();
+        dongSelect.innerHTML = '<option value="">읍/면/동 전체 (필터 해제)</option>';
+        dongs.forEach(dong => {
+            const opt = document.createElement('option');
+            opt.value = dong;
+            opt.innerText = dong;
+            dongSelect.appendChild(opt);
+        });
+        dongSelect.disabled = dongs.length === 0;
+
+        renderTable();
+
+        if (data.length > 0) {
+            updateTime.innerText = new Date().toLocaleTimeString();
+
+            // 히스토리 저장
+            const selectedTypes = Array.from(document.querySelectorAll('input[name="type"]:checked')).map(cb => cb.value);
+            saveHistory(data, gugunSelect.value, dateSelect.value, selectedTypes);
+        }
+    } else {
+        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state">데이터 조회 실패. 서버 연결을 확인해 주세요.</td></tr>`;
+        globalData = [];
+        filteredData = [];
+        dongSelect.innerHTML = '<option value="">읍/면/동 전체 (조회 후 활성화)</option>';
+        dongSelect.disabled = true;
+    }
+
+    fetchBtn.disabled = false;
+    fetchBtn.innerText = "실시간 통합 조회";
+});
+
+// ===================================================================
+// 11. 초기화
+// ===================================================================
+initDateOptions();
+renderHistory();
+
+console.log("🚀 부동산 분석 PRO v14 - Cloudflare 통합 모드");

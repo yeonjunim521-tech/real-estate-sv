@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>부동산 분석 PRO | 전국 8종 통합 실거래가 분석 플랫폼</title>
+    <meta name="description" content="국토교통부 실거래가를 지역·기간·부동산 유형별로 한눈에 분석하는 통합 대시보드">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="부동산 분석 PRO">
+    <meta property="og:description" content="전국 8종 부동산 실거래가 통합 분석 대시보드">
+    <meta property="og:image" content="/real-estate-pro-og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="부동산 분석 PRO">
+    <meta name="twitter:description" content="전국 8종 부동산 실거래가 통합 분석 대시보드">
+    <meta name="twitter:image" content="/real-estate-pro-og.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 상단 헤더 -->
+        <header class="main-header">
+            <div class="brand">
+                <h1>부동산 <span class="accent">분석 PRO</span></h1>
+                <p>전국 실시간 동기화 | 8대 부동산 유형 통합 대시보드</p>
+            </div>
+            <div class="update-status">
+                <span class="pulse"></span> LIVE <span id="update-time">-</span>
+            </div>
+        </header>
+
+        <!-- 8가지 필터 섹션 (주거용 / 상업·기타) -->
+        <section class="filter-dashboard">
+            <div class="filter-group">
+                <span class="group-label">주거용 부동산</span>
+                <div class="filter-chips">
+                    <label class="chip"><input type="checkbox" name="type" value="apt"><span>아파트 매매</span></label>
+                    <label class="chip"><input type="checkbox" name="type" value="rhous"><span>연립/다세대</span></label>
+                    <label class="chip"><input type="checkbox" name="type" value="shous"><span>단독/다가구</span></label>
+                    <label class="chip"><input type="checkbox" name="type" value="right"><span>분양/입주권</span></label>
+                </div>
+            </div>
+            <div class="filter-group">
+                <span class="group-label">상업/공업/기타</span>
+                <div class="filter-chips">
+                    <label class="chip"><input type="checkbox" name="type" value="office"><span>오피스텔</span></label>
+                    <label class="chip"><input type="checkbox" name="type" value="comm"><span>상업업무용</span></label>
+                    <label class="chip"><input type="checkbox" name="type" value="fact"><span>공장/창고 등</span></label>
+                    <label class="chip"><input type="checkbox" name="type" value="land"><span>토지/임야</span></label>
+                </div>
+            </div>
+        </section>
+
+        <!-- 지역 및 기간 선택 -->
+        <main class="dashboard-card">
+            <div class="dashboard-toolbar">
+                <div class="search-filters">
+                    <!-- 전국 17개 시/도 완전 탑재 -->
+                    <select id="sido-select">
+                        <option value="">시/도 선택</option>
+                        <option value="11">서울특별시</option>
+                        <option value="26">부산광역시</option>
+                        <option value="27">대구광역시</option>
+                        <option value="28">인천광역시</option>
+                        <option value="29">광주광역시</option>
+                        <option value="30">대전광역시</option>
+                        <option value="31">울산광역시</option>
+                        <option value="36">세종특별자치시</option>
+                        <option value="41">경기도</option>
+                        <option value="42">강원특별자치도</option>
+                        <option value="43">충청북도</option>
+                        <option value="44">충청남도</option>
+                        <option value="45">전북특별자치도</option>
+                        <option value="46">전라남도</option>
+                        <option value="47">경상북도</option>
+                        <option value="48">경상남도</option>
+                        <option value="50">제주특별자치도</option>
+                    </select>
+                    <select id="gugun-select">
+                        <option value="">시/군/구 선택</option>
+                    </select>
+                    <!-- 행정동(읍/면/동) 필터 추가 -->
+                    <select id="dong-select" disabled>
+                        <option value="">읍/면/동 전체 (조회 후 활성화)</option>
+                    </select>
+                    <!-- JS에서 현재 날짜 기준 자동 생성 -->
+                    <select id="date-select"></select>
+                    <button id="fetch-live-btn" class="live-btn">실시간 통합 조회</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>매물 정보 / 유형</th>
+                            <th>거래 금액</th>
+                            <th>계약 일자</th>
+                            <th>면적 분석 (m² → 평)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="analysis-body">
+                        <tr>
+                            <td colspan="4" class="empty-state">조회할 유형을 선택하고 지역을 설정해 주세요.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 페이지네이션 컨트롤 바 추가 -->
+            <div class="pagination-container" id="pagination-container" style="display: none;">
+                <div class="page-size-selector">
+                    <label for="page-size">표시 갯수:</label>
+                    <select id="page-size">
+                        <option value="10">10개씩 보기</option>
+                        <option value="30" selected>30개씩 보기</option>
+                        <option value="50">50개씩 보기</option>
+                    </select>
+                </div>
+                <div class="page-controls">
+                    <button id="prev-page-btn" class="page-btn" disabled>이전</button>
+                    <span id="page-info">1 / 1</span>
+                    <button id="next-page-btn" class="page-btn" disabled>다음</button>
+                </div>
+            </div>
+        </main>
+
+        <footer class="history-section">
+            <div class="history-header">
+                <h3>최근 분석 리포트</h3>
+                <button id="clear-history-btn" class="clear-btn">리포트 삭제</button>
+            </div>
+            <div id="history-list" class="history-grid">
+                <!-- 자바스크립트로 리포트 카드가 추가됩니다 -->
+            </div>
+        </footer>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>

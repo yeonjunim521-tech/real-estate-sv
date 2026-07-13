@@ -133,7 +133,7 @@ export async function handleApiRequest(
       return jsonError("국토부 API 요청이 실패했습니다.", upstreamResponse.status)
     }
     if (cache && (await isCacheableMolitResponse(upstreamResponse))) {
-      const cacheResponse = upstreamResponse.clone()
+      const cacheResponse = new Response(upstreamResponse.clone().body, upstreamResponse)
       cacheResponse.headers.set("Cache-Control", "s-maxage=300")
       const cacheWrite = cache.put(cacheKey, cacheResponse).catch(() => undefined)
       if (waitUntil) {

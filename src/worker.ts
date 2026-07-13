@@ -64,9 +64,13 @@ export async function handleApiRequest(
   upstreamUrl.searchParams.set("numOfRows", "100")
 
   try {
-    return await fetchUpstream(upstreamUrl.toString(), {
+    const upstreamResponse = await fetchUpstream(upstreamUrl.toString(), {
       headers: { Accept: "application/json" },
     })
+    if (!upstreamResponse.ok) {
+      return jsonError("국토부 API 요청이 실패했습니다.", upstreamResponse.status)
+    }
+    return upstreamResponse
   } catch {
     return jsonError("국토부 API에 연결하지 못했습니다.", 502)
   }
@@ -87,13 +91,19 @@ export async function routeRequest(
   return fetchAsset(request)
 }
 
+export function createWorkerHandler(fetchUpstream: typeof fetch = fetch) {
+  return (request: Request, serviceKey: string, fetchAsset: AssetFetcher) =>
+    routeRequest(request, serviceKey, fetchAsset, fetchUpstream)
+}
+
+const workerHandler = createWorkerHandler(fetch)
+
 export default {
   async fetch(request, env): Promise<Response> {
-    return routeRequest(
+    return workerHandler(
       request,
       env.DATA_GO_KR_SERVICE_KEY,
       (assetRequest) => env.ASSETS.fetch(assetRequest),
-      fetch,
     )
   },
 } satisfies ExportedHandler<Env>

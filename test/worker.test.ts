@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { handleApiRequest, routeRequest } from "../src/worker"
+import { createWorkerHandler, handleApiRequest, routeRequest } from "../src/worker"
 
 const secret = "test-secret"
 
@@ -34,6 +34,24 @@ describe("handleApiRequest", () => {
     expect(upstreamUrl.searchParams.get("DEAL_YMD")).toBe("202606")
     expect(upstreamUrl.searchParams.get("_type")).toBe("json")
     expect(upstreamUrl.searchParams.get("numOfRows")).toBe("100")
+  })
+
+  it("sanitizes non-OK upstream responses while preserving their status", async () => {
+    const fetchUpstream = vi.fn(async () =>
+      new Response(`serviceKey=${secret}&error=upstream details`, { status: 503 }),
+    )
+
+    const response = await handleApiRequest(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+    )
+
+    expect(response.status).toBe(503)
+    expect(response.headers.get("Cache-Control")).toBe("no-store")
+    const body = await response.text()
+    expect(body).toBe(JSON.stringify({ error: "국토부 API 요청이 실패했습니다." }))
+    expect(body).not.toContain(secret)
   })
 
   it.each([
@@ -83,6 +101,22 @@ describe("handleApiRequest", () => {
 })
 
 describe("routeRequest", () => {
+  it("creates a handler with an injected upstream fetcher", async () => {
+    const fetchAsset = vi.fn(async () => new Response("asset"))
+    const fetchUpstream = vi.fn(async () => Response.json({ ok: true }))
+    const handler = createWorkerHandler(fetchUpstream)
+
+    const response = await handler(
+      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchAsset,
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchUpstream).toHaveBeenCalledOnce()
+    expect(fetchAsset).not.toHaveBeenCalled()
+  })
+
   it("serves non-API requests from the static assets binding", async () => {
     const fetchAsset = vi.fn(async () => new Response("asset"))
     const fetchUpstream = vi.fn()

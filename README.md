@@ -29,6 +29,8 @@ DATA_GO_KR_SERVICE_KEY=발급받은_서비스키
 
 ## Cloudflare 배포
 
+운영 Worker 이름은 `real-estate-sv`이며 GitHub `main` 푸시가 Cloudflare 빌드와 배포를 실행합니다.
+
 ```bash
 npx wrangler secret put DATA_GO_KR_SERVICE_KEY
 npm run deploy

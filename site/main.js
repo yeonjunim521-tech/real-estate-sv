@@ -203,6 +203,7 @@ let filteredData = [];
 let currentPage = 1;
 let itemsPerPage = 30;
 let sortMode = 'date-desc';
+const columnVisibility = { property: true, price: true, date: true, analysis: true };
 let lastQueryHadError = false;
 let lastQueryHadPartialError = false;
 
@@ -212,6 +213,9 @@ const prevPageBtn = document.getElementById('prev-page-btn');
 const nextPageBtn = document.getElementById('next-page-btn');
 const pageInfo = document.getElementById('page-info');
 const sortSelect = document.getElementById('sort-select');
+const exportCsvBtn = document.getElementById('export-csv-btn');
+const columnsToggle = document.getElementById('columns-toggle');
+const columnsMenu = document.getElementById('columns-menu');
 
 // 히스토리 요소
 const historyList = document.getElementById('history-list');
@@ -631,12 +635,61 @@ function sortTransactions(data) {
     });
 }
 
+function syncColumnVisibility() {
+    document.querySelectorAll('[data-column]').forEach(cell => {
+        cell.hidden = !columnVisibility[cell.dataset.column];
+    });
+    document.querySelectorAll('[data-column-toggle]').forEach(input => {
+        input.checked = columnVisibility[input.dataset.columnToggle];
+    });
+}
+
+function csvCell(value) {
+    const text = String(value ?? '');
+    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replace(/"/g, '""')}"`;
+}
+
+function exportCsv() {
+    if (!filteredData.length) {
+        setQueryStatus('먼저 분석 결과를 조회해 주세요.', 'error');
+        return;
+    }
+
+    const headers = ['매물 정보', '유형', '상태', '거래 금액(만원)', '계약일', '면적', '면적 기준', '법정동', '지번', '층', '건축연도', '원천 데이터'];
+    const rows = filteredData.map(item => [
+        item.name,
+        item.typeName,
+        item.cancelled ? '취소' : '유효',
+        item.price,
+        item.date,
+        item.size,
+        item.sizeLabel,
+        item.umdNm,
+        item.jibun,
+        item.floor,
+        item.buildYear,
+        item.source || '국토교통부 실거래가 Open API'
+    ]);
+    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    link.download = `real-estate-${dateSelect.value || 'analysis'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
+    setQueryStatus(`${filteredData.length.toLocaleString()}건을 CSV로 저장했습니다.`, 'success');
+}
+
 function renderTable() {
+    exportCsvBtn.disabled = filteredData.length === 0;
     if (filteredData.length === 0) {
         analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon">⌕</span><strong>조회된 데이터가 없습니다.</strong><span>다른 유형, 지역 또는 기준 월을 선택해 보세요.</span></td></tr>`;
         paginationContainer.style.display = 'none';
         renderMetrics([]);
         renderTrend([]);
+        syncColumnVisibility();
         return;
     }
 
@@ -653,7 +706,7 @@ function renderTable() {
         const statusLabel = item.cancelled ? '취소' : '유효';
         return `
         <tr>
-            <td data-label="매물 정보">
+            <td data-column="property" data-label="매물 정보">
                 <strong style="display:block; margin-bottom: 2px;">${escapeHtml(item.name)}</strong>
                 <div style="font-size: 0.85rem; color: var(--muted); margin-bottom: 4px;">
                     ${escapeHtml(item.umdNm)} ${escapeHtml(item.jibun)} ${item.floor !== '-' ? `<span style="margin-left:5px; color:#ccc;">|</span> ${escapeHtml(item.floor)}` : ''}
@@ -661,9 +714,9 @@ function renderTable() {
                 <span class="type-tag type-${escapeHtml(item.type)}">${escapeHtml(item.typeName)}</span>
                 <span class="transaction-status${item.cancelled ? ' is-cancelled' : ''}">${statusLabel}</span>
             </td>
-            <td data-label="거래 금액" style="font-weight:700; color: var(--accent)">${item.price.toLocaleString()}만원</td>
-            <td data-label="계약일">${escapeHtml(item.date)}</td>
-            <td data-label="면적·평당가" class="analysis-target">
+            <td data-column="price" data-label="거래 금액" style="font-weight:700; color: var(--accent)">${item.price.toLocaleString()}만원</td>
+            <td data-column="date" data-label="계약일">${escapeHtml(item.date)}</td>
+            <td data-column="analysis" data-label="면적·평당가" class="analysis-target">
                 <button class="analyze-btn" type="button" data-action="analyze" data-size="${escapeHtml(item.size)}" data-price="${item.price}" data-label="${escapeHtml(item.sizeLabel)}">평당가 산출</button>
                 <button class="detail-button" type="button" data-action="detail" data-index="${dataIndex}">상세</button>
             </td>
@@ -677,6 +730,7 @@ function renderTable() {
 
     prevPageBtn.disabled = currentPage === 1;
     nextPageBtn.disabled = currentPage === totalPages;
+    syncColumnVisibility();
 }
 
 function openDetail(index) {
@@ -725,6 +779,35 @@ analysisBody.addEventListener('click', event => {
     if (action === 'reset') resetRow(actionTarget, size, price, label);
     if (action === 'detail') openDetail(Number(actionTarget.dataset.index));
 });
+
+columnsToggle.addEventListener('click', () => {
+    const isOpen = columnsToggle.getAttribute('aria-expanded') === 'true';
+    columnsToggle.setAttribute('aria-expanded', String(!isOpen));
+    columnsMenu.hidden = isOpen;
+});
+
+document.querySelectorAll('[data-column-toggle]').forEach(input => {
+    input.addEventListener('change', event => {
+        const checkbox = event.target;
+        const visibleCount = Object.values(columnVisibility).filter(Boolean).length;
+        if (!checkbox.checked && visibleCount === 1) {
+            checkbox.checked = true;
+            setQueryStatus('열은 하나 이상 표시해야 합니다.', 'error');
+            return;
+        }
+        columnVisibility[checkbox.dataset.columnToggle] = checkbox.checked;
+        syncColumnVisibility();
+    });
+});
+
+document.addEventListener('click', event => {
+    if (!event.target.closest('.columns-control')) {
+        columnsMenu.hidden = true;
+        columnsToggle.setAttribute('aria-expanded', 'false');
+    }
+});
+
+exportCsvBtn.addEventListener('click', exportCsv);
 
 pageSizeSelect.addEventListener('change', (e) => {
     itemsPerPage = parseInt(e.target.value);

@@ -34,7 +34,7 @@ describe("Cloudflare frontend", () => {
       readFile(resolve("site/main.js"), "utf8"),
     ])
 
-    for (const id of ["theme-toggle", "query-status", "stat-total", "stat-median", "stat-average", "stat-valid", "stat-cancelled", "trend-bars", "trend-summary", "sort-select", "detail-panel", "detail-source", "detail-history-list"]) {
+    for (const id of ["theme-toggle", "query-status", "stat-total", "stat-median", "stat-average", "stat-valid", "stat-cancelled", "trend-bars", "trend-summary", "sort-select", "export-csv-btn", "columns-toggle", "columns-menu", "detail-panel", "detail-source", "detail-history-list"]) {
       expect(html).toContain(`id="${id}"`)
     }
     expect(html).toContain('data-theme="light"')
@@ -42,6 +42,8 @@ describe("Cloudflare frontend", () => {
     expect(script).toContain("escapeHtml")
     expect(script).toContain('data-action="detail"')
     expect(script).toContain("sortTransactions")
+    expect(script).toContain("exportCsv")
+    expect(script).toContain("syncColumnVisibility")
     expect(script).toContain("국토교통부 실거래가 Open API")
     expect(script).toContain("realEstateTheme")
     expect(script).toContain("setQueryStatus")

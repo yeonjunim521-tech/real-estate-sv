@@ -167,29 +167,170 @@ const dateSelect = document.getElementById('date-select');
 const fetchBtn = document.getElementById('fetch-live-btn');
 const analysisBody = document.getElementById('analysis-body');
 const updateTime = document.getElementById('update-time');
+const queryStatus = document.getElementById('query-status');
+const resultCount = document.getElementById('result-count');
+const resultsSummary = document.getElementById('results-summary');
+const metricPeriod = document.getElementById('metric-period');
+const statTotal = document.getElementById('stat-total');
+const statMedian = document.getElementById('stat-median');
+const statAverage = document.getElementById('stat-average');
+const statTypes = document.getElementById('stat-types');
+const statValid = document.getElementById('stat-valid');
+const statCancelled = document.getElementById('stat-cancelled');
+const trendBars = document.getElementById('trend-bars');
+const trendCaption = document.getElementById('trend-caption');
+const trendSummary = document.getElementById('trend-summary');
+const themeToggle = document.getElementById('theme-toggle');
+const detailPanel = document.getElementById('detail-panel');
+const detailClose = document.getElementById('detail-close');
+const detailPrice = document.getElementById('detail-price');
+const detailStatus = document.getElementById('detail-status');
+const detailName = document.getElementById('detail-name');
+const detailType = document.getElementById('detail-type');
+const detailDate = document.getElementById('detail-date');
+const detailSize = document.getElementById('detail-size');
+const detailFloor = document.getElementById('detail-floor');
+const detailYear = document.getElementById('detail-year');
+const detailAddress = document.getElementById('detail-address');
+const detailSource = document.getElementById('detail-source');
+const detailConfidence = document.getElementById('detail-confidence');
+const detailUpdated = document.getElementById('detail-updated');
+const detailHistoryList = document.getElementById('detail-history-list');
 
 // 페이지네이션 및 상태 변수
 let globalData = [];
 let filteredData = [];
 let currentPage = 1;
 let itemsPerPage = 30;
+let sortMode = 'date-desc';
+let lastQueryHadError = false;
+let lastQueryHadPartialError = false;
 
 const paginationContainer = document.getElementById('pagination-container');
 const pageSizeSelect = document.getElementById('page-size');
 const prevPageBtn = document.getElementById('prev-page-btn');
 const nextPageBtn = document.getElementById('next-page-btn');
 const pageInfo = document.getElementById('page-info');
+const sortSelect = document.getElementById('sort-select');
 
 // 히스토리 요소
 const historyList = document.getElementById('history-list');
 const clearHistoryBtn = document.getElementById('clear-history-btn');
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+}
+
+function setQueryStatus(message, state = '') {
+    if (!queryStatus) return;
+    queryStatus.innerText = message;
+    if (state) queryStatus.dataset.state = state;
+    else delete queryStatus.dataset.state;
+}
+
+function setFetchButton(isLoading) {
+    fetchBtn.disabled = isLoading;
+    fetchBtn.innerHTML = isLoading
+        ? '<span class="button-spinner" aria-hidden="true"></span><span>데이터 불러오는 중</span>'
+        : '<span class="button-icon">↗</span><span>분석 시작</span>';
+}
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('realEstateTheme');
+    const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = savedTheme || preferredTheme;
+    updateThemeButton();
+}
+
+function updateThemeButton() {
+    if (!themeToggle) return;
+    const isDark = document.documentElement.dataset.theme === 'dark';
+    themeToggle.innerHTML = isDark ? '☼<span>라이트</span>' : '◐<span>다크</span>';
+    themeToggle.setAttribute('aria-label', isDark ? '라이트모드로 전환' : '다크모드로 전환');
+}
+
+themeToggle?.addEventListener('click', () => {
+    const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = nextTheme;
+    localStorage.setItem('realEstateTheme', nextTheme);
+    updateThemeButton();
+});
+
+function formatPrice(value) {
+    if (!value) return '—';
+    return `${Math.round(value).toLocaleString()}만원`;
+}
+
+function renderMetrics(data) {
+    const total = data.length;
+    const cancelled = data.filter(item => item.cancelled);
+    const valid = data.filter(item => !item.cancelled);
+    const prices = valid.map(item => item.price).filter(price => Number.isFinite(price) && price > 0).sort((a, b) => a - b);
+    const median = prices.length ? prices[Math.floor((prices.length - 1) / 2)] : 0;
+    const average = prices.length ? prices.reduce((sum, price) => sum + price, 0) / prices.length : 0;
+    const types = new Set(valid.map(item => item.typeName).filter(Boolean));
+    const periodLabel = dateSelect.options[dateSelect.selectedIndex]?.text || '조회 전';
+
+    statTotal.innerText = total ? valid.length.toLocaleString() : '—';
+    statMedian.innerText = formatPrice(median);
+    statAverage.innerText = formatPrice(average);
+    statTypes.innerText = types.size ? `${types.size}종` : '—';
+    statValid.innerText = total ? valid.length.toLocaleString() : '—';
+    statCancelled.innerText = total ? cancelled.length.toLocaleString() : '—';
+    metricPeriod.innerText = total ? periodLabel : '조회 전';
+    resultCount.innerText = `${total.toLocaleString()}건`;
+    resultsSummary.innerText = total
+        ? `${periodLabel} · 유효 ${valid.length.toLocaleString()}건 · 취소 ${cancelled.length.toLocaleString()}건`
+        : '조회 조건을 선택하면 거래가 표시됩니다.';
+}
+
+function renderTrend(data) {
+    const monthMap = new Map();
+    data.filter(item => !item.cancelled).forEach(item => {
+        if (!item.date || !item.price) return;
+        const month = item.date.slice(0, 7);
+        const current = monthMap.get(month) || [];
+        current.push(item.price);
+        monthMap.set(month, current);
+    });
+    const months = [...monthMap.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-8);
+    if (!trendBars || !months.length) {
+        if (trendBars) trendBars.innerHTML = '<div class="chart-empty">분석을 시작하면 월별 흐름을 보여드립니다.</div>';
+        if (trendCaption) trendCaption.innerText = '데이터를 조회하면 표시됩니다';
+        if (trendSummary) trendSummary.innerText = '분석을 시작하면 유효 거래의 월별 가격 흐름이 표시됩니다.';
+        return;
+    }
+
+    const values = months.map(([, prices]) => {
+        const sorted = [...prices].sort((a, b) => a - b);
+        return sorted[Math.floor((sorted.length - 1) / 2)];
+    });
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const span = Math.max(max - min, 1);
+    trendBars.innerHTML = months.map(([month], index) => {
+        const height = 28 + ((values[index] - min) / span) * 62;
+        const label = `${month.slice(5)}월 중앙 거래가 ${Math.round(values[index]).toLocaleString()}만원`;
+        return `<span class="trend-bar${index === months.length - 1 ? ' is-latest' : ''}" style="height:${height}%" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
+    }).join('');
+    trendCaption.innerText = `${months[0][0].replace('-', '.')} — ${months[months.length - 1][0].replace('-', '.')}`;
+    if (trendSummary) {
+        trendSummary.innerText = `${months.map(([month], index) => `${month.replace('-', '년 ')}월 중앙 거래가 ${Math.round(values[index]).toLocaleString()}만원`).join('. ')}.`;
+    }
+}
 
 // ===================================================================
 // 4. 날짜 자동 생성 (현재 시점 기준)
 // ===================================================================
 function initDateOptions() {
     const now = new Date(); // 항상 현재 시점
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 60; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -205,9 +346,15 @@ function initDateOptions() {
 // ===================================================================
 // 5. 시/도 선택 → 시/군/구 동적 로딩
 // ===================================================================
+function markQueryDirty() {
+    if (globalData.length) setQueryStatus('조회 조건이 바뀌었습니다. 다시 분석해 주세요.');
+}
+
 sidoSelect.addEventListener('change', () => {
     const sidoCode = sidoSelect.value;
     gugunSelect.innerHTML = '<option value="">시/군/구 선택</option>';
+    dongSelect.innerHTML = '<option value="">조회 후 선택</option>';
+    dongSelect.disabled = true;
     if (sidoCode && REGION_DATA[sidoCode]) {
         REGION_DATA[sidoCode].guguns.forEach(g => {
             const opt = document.createElement('option');
@@ -216,7 +363,12 @@ sidoSelect.addEventListener('change', () => {
             gugunSelect.appendChild(opt);
         });
     }
+    markQueryDirty();
 });
+
+gugunSelect.addEventListener('change', markQueryDirty);
+dateSelect.addEventListener('change', markQueryDirty);
+document.querySelectorAll('input[name="type"]').forEach(checkbox => checkbox.addEventListener('change', markQueryDirty));
 
 // ===================================================================
 // 6. [핵심] API 호출 로직 (영문 필드명 + Cloudflare Worker)
@@ -252,8 +404,9 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
         //    따라서 startsWith("00")으로 체크해야 정상 동작합니다.
         const resultCode = resData.response?.header?.resultCode || '';
         if (!resultCode.startsWith("00")) {
-            console.warn(`[${type}] API 오류 (코드: ${resultCode}): ${resData.response?.header?.resultMsg}`);
-            return [];
+            const resultMessage = resData.response?.header?.resultMsg || '알 수 없는 API 오류';
+            console.warn(`[${type}] API 오류 (코드: ${resultCode}): ${resultMessage}`);
+            throw new Error(`${type} API 오류: ${resultMessage}`);
         }
 
         const items = resData.response?.body?.items?.item;
@@ -331,6 +484,9 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
             const month = String(item.dealMonth || '01').padStart(2, '0');
             const day = String(item.dealDay || '01').padStart(2, '0');
 
+            const cancelDateValue = item.cdealDay || item.cancelDealDay || item.cancelDate || '';
+            const cancelled = Boolean(item.cdealType || item.cancelDealType || cancelDateValue);
+
             // 층수 포맷팅 (지하층 표시)
             let floorText = item.floor || '-';
             if (floorText !== '-') {
@@ -361,12 +517,16 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
                 buildYear: item.buildYear || '-',   // 건축년도
                 umdNm: item.umdNm || '',            // 법정동명
                 jibun: displayJibun,                // 복구된 지번 적용
-                buildingType: buildingType           // 건물 용도
+                buildingType: buildingType,          // 건물 용도
+                cancelled: cancelled,
+                cancelDate: String(cancelDateValue || ''),
+                source: '국토교통부 실거래가 Open API',
+                confidence: '원천 거래 확인'
             };
         });
     } catch (e) {
         console.error(`[${type}] 데이터 수집 실패:`, e);
-        return [];
+        throw e;
     }
 }
 
@@ -374,12 +534,20 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
  * 체크된 모든 유형에 대해 병렬 API 호출 후 결과 병합
  */
 async function getMultiTypeData() {
+    lastQueryHadError = false;
+    lastQueryHadPartialError = false;
     const lawdCd = gugunSelect.value;
     const dealYmd = dateSelect.value;
     const selectedCheckboxes = document.querySelectorAll('input[name="type"]:checked');
 
-    if (!lawdCd) { alert("분석할 지역을 먼저 선택해 주세요!"); return null; }
-    if (selectedCheckboxes.length === 0) { alert("부동산 유형을 최소 하나 선택해 주세요!"); return null; }
+    if (!lawdCd) {
+        setQueryStatus('시·군·구를 먼저 선택해 주세요.', 'error');
+        return null;
+    }
+    if (selectedCheckboxes.length === 0) {
+        setQueryStatus('부동산 유형을 하나 이상 선택해 주세요.', 'error');
+        return null;
+    }
 
     const selectedTypes = Array.from(selectedCheckboxes).map(cb => cb.value);
 
@@ -389,6 +557,7 @@ async function getMultiTypeData() {
         );
 
         let combined = [];
+        const failedTypes = [];
 
         results.forEach((result, i) => {
             if (result.status === 'fulfilled' && result.value) {
@@ -396,15 +565,23 @@ async function getMultiTypeData() {
                 console.log(`[${selectedTypes[i]}] ${result.value.length}건 수집 완료`);
             } else if (result.status === 'rejected') {
                 console.error(`[${selectedTypes[i]}] 실패:`, result.reason);
+                failedTypes.push(selectedTypes[i]);
             }
         });
+
+        if (failedTypes.length === selectedTypes.length) {
+            lastQueryHadError = true;
+            setQueryStatus('데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
+            return null;
+        }
+        if (failedTypes.length) lastQueryHadPartialError = true;
 
         // 계약일 기준 최신순 정렬
         combined.sort((a, b) => new Date(b.date) - new Date(a.date));
         return combined;
 
     } catch (e) {
-        alert("⚠️ [연동 오류]\n" + e.message);
+        setQueryStatus('데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
         return null;
     }
 }
@@ -414,7 +591,9 @@ async function getMultiTypeData() {
 // ===================================================================
 function runInlineAnalysis(btn, size, price, label = '면적') {
     const row = btn.closest('tr');
+    if (!row) return;
     const target = row.querySelector('.analysis-target');
+    if (!target) return;
     const sizeNum = parseFloat(size);
 
     if (sizeNum <= 0 || isNaN(sizeNum)) {
@@ -427,25 +606,37 @@ function runInlineAnalysis(btn, size, price, label = '면적') {
 
     target.innerHTML = `
         <div class="analysis-detail">
-            <span class="area-badge" title="계산기준: ${label}">${label} ${size}㎡ (${py}평)</span>
+            <span class="area-badge" title="계산기준: ${escapeHtml(label)}">${escapeHtml(label)} ${escapeHtml(size)}㎡ (${py}평)</span>
             <span class="price-col">평당 ${ppp.toLocaleString()}만원</span>
-            <button class="small-reset-btn" onclick="resetRow(this, '${size}', ${price}, '${label}')">↩</button>
+            <button class="small-reset-btn" type="button" data-action="reset" data-size="${escapeHtml(size)}" data-price="${price}" data-label="${escapeHtml(label)}">↩</button>
         </div>
     `;
 }
 
 function resetRow(btn, size, price, label) {
-    btn.closest('.analysis-target').innerHTML =
-        `<button class="analyze-btn" onclick="runInlineAnalysis(this, '${size}', ${price}, '${label}')">평당가 산출</button>`;
+    const target = btn.closest('.analysis-target');
+    if (!target) return;
+    target.innerHTML = `<button class="analyze-btn" type="button" data-action="analyze" data-size="${escapeHtml(size)}" data-price="${price}" data-label="${escapeHtml(label)}">평당가 산출</button>`;
 }
 
 // ===================================================================
 // 8. 렌더링 및 페이지네이션
 // ===================================================================
+function sortTransactions(data) {
+    return [...data].sort((a, b) => {
+        if (sortMode === 'price-desc') return b.price - a.price;
+        if (sortMode === 'price-asc') return a.price - b.price;
+        if (sortMode === 'size-desc') return (Number.parseFloat(b.size) || 0) - (Number.parseFloat(a.size) || 0);
+        return new Date(b.date) - new Date(a.date);
+    });
+}
+
 function renderTable() {
     if (filteredData.length === 0) {
-        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state">조회된 데이터가 없습니다. 다른 유형/지역/날짜를 선택해 보세요.</td></tr>`;
+        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon">⌕</span><strong>조회된 데이터가 없습니다.</strong><span>다른 유형, 지역 또는 기준 월을 선택해 보세요.</span></td></tr>`;
         paginationContainer.style.display = 'none';
+        renderMetrics([]);
+        renderTrend([]);
         return;
     }
 
@@ -457,22 +648,28 @@ function renderTable() {
     const endIdx = startIdx + itemsPerPage;
     const pageData = filteredData.slice(startIdx, endIdx);
 
-    analysisBody.innerHTML = pageData.map(item => `
+    analysisBody.innerHTML = pageData.map(item => {
+        const dataIndex = globalData.indexOf(item);
+        const statusLabel = item.cancelled ? '취소' : '유효';
+        return `
         <tr>
-            <td>
-                <strong style="display:block; margin-bottom: 2px;">${item.name}</strong>
-                <div style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: 4px;">
-                    ${item.umdNm} ${item.jibun} ${item.floor !== '-' ? `<span style="margin-left:5px; color:#ccc;">|</span> ${item.floor}` : ''}
+            <td data-label="매물 정보">
+                <strong style="display:block; margin-bottom: 2px;">${escapeHtml(item.name)}</strong>
+                <div style="font-size: 0.85rem; color: var(--muted); margin-bottom: 4px;">
+                    ${escapeHtml(item.umdNm)} ${escapeHtml(item.jibun)} ${item.floor !== '-' ? `<span style="margin-left:5px; color:#ccc;">|</span> ${escapeHtml(item.floor)}` : ''}
                 </div>
-                <span class="type-tag type-${item.type}">${item.typeName}</span>
+                <span class="type-tag type-${escapeHtml(item.type)}">${escapeHtml(item.typeName)}</span>
+                <span class="transaction-status${item.cancelled ? ' is-cancelled' : ''}">${statusLabel}</span>
             </td>
-            <td style="font-weight:700; color: var(--accent)">${item.price.toLocaleString()}만원</td>
-            <td>${item.date}</td>
-            <td class="analysis-target">
-                <button class="analyze-btn" onclick="runInlineAnalysis(this, '${item.size}', ${item.price}, '${item.sizeLabel}')">평당가 산출</button>
+            <td data-label="거래 금액" style="font-weight:700; color: var(--accent)">${item.price.toLocaleString()}만원</td>
+            <td data-label="계약일">${escapeHtml(item.date)}</td>
+            <td data-label="면적·평당가" class="analysis-target">
+                <button class="analyze-btn" type="button" data-action="analyze" data-size="${escapeHtml(item.size)}" data-price="${item.price}" data-label="${escapeHtml(item.sizeLabel)}">평당가 산출</button>
+                <button class="detail-button" type="button" data-action="detail" data-index="${dataIndex}">상세</button>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 
     // 페이지네이션 UI 업데이트
     paginationContainer.style.display = 'flex';
@@ -482,8 +679,62 @@ function renderTable() {
     nextPageBtn.disabled = currentPage === totalPages;
 }
 
+function openDetail(index) {
+    const item = globalData[index];
+    if (!item || !detailPanel) return;
+    detailPrice.innerText = formatPrice(item.price);
+    detailStatus.innerText = item.cancelled ? `취소 거래${item.cancelDate ? ` · ${item.cancelDate}` : ''}` : '유효 거래';
+    detailStatus.classList.toggle('is-cancelled', Boolean(item.cancelled));
+    detailName.innerText = item.name || '—';
+    detailType.innerText = item.typeName || '—';
+    detailDate.innerText = item.date || '—';
+    detailSize.innerText = item.size ? `${item.sizeLabel || '면적'} ${item.size}㎡` : '—';
+    detailFloor.innerText = item.floor || '—';
+    detailYear.innerText = item.buildYear || '—';
+    detailAddress.innerText = `${item.umdNm || ''} ${item.jibun || ''}`.trim() || '—';
+    detailSource.innerText = item.source || '국토교통부 실거래가 Open API';
+    detailConfidence.innerText = item.confidence || '원천 거래 확인';
+    detailUpdated.innerText = updateTime.innerText || '조회 시각 미정';
+
+    const related = globalData
+        .filter(candidate => candidate.name === item.name && candidate.umdNm === item.umdNm && candidate.jibun === item.jibun)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5);
+    detailHistoryList.innerHTML = related.map(transaction => `
+        <article class="detail-history-item">
+            <strong>${escapeHtml(formatPrice(transaction.price))}</strong>
+            <span>${escapeHtml(transaction.date)} · ${transaction.cancelled ? '취소 거래' : '유효 거래'}</span>
+        </article>
+    `).join('') || '<p class="history-empty">같은 주소의 추가 거래가 없습니다.</p>';
+    detailPanel.hidden = false;
+    detailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+detailClose?.addEventListener('click', () => {
+    detailPanel.hidden = true;
+});
+
+analysisBody.addEventListener('click', event => {
+    const actionTarget = event.target.closest('[data-action]');
+    if (!actionTarget) return;
+    const action = actionTarget.dataset.action;
+    const size = actionTarget.dataset.size || '';
+    const price = Number(actionTarget.dataset.price || 0);
+    const label = actionTarget.dataset.label || '면적';
+    if (action === 'analyze') runInlineAnalysis(actionTarget, size, price, label);
+    if (action === 'reset') resetRow(actionTarget, size, price, label);
+    if (action === 'detail') openDetail(Number(actionTarget.dataset.index));
+});
+
 pageSizeSelect.addEventListener('change', (e) => {
     itemsPerPage = parseInt(e.target.value);
+    currentPage = 1;
+    renderTable();
+});
+
+sortSelect.addEventListener('change', (event) => {
+    sortMode = event.target.value;
+    filteredData = sortTransactions(filteredData);
     currentPage = 1;
     renderTable();
 });
@@ -506,12 +757,14 @@ nextPageBtn.addEventListener('click', () => {
 dongSelect.addEventListener('change', () => {
     const selectedDong = dongSelect.value;
     if (selectedDong) {
-        filteredData = globalData.filter(item => item.umdNm === selectedDong);
+        filteredData = sortTransactions(globalData.filter(item => item.umdNm === selectedDong));
     } else {
-        filteredData = [...globalData];
+        filteredData = sortTransactions(globalData);
     }
     currentPage = 1;
     renderTable();
+    renderMetrics(filteredData);
+    renderTrend(filteredData);
 });
 
 // ===================================================================
@@ -539,7 +792,13 @@ function saveHistory(data, lawdCd, dealYmd, selectedTypes) {
         timestamp: new Date().getTime()
     };
 
-    let history = JSON.parse(localStorage.getItem('realEstateHistory') || '[]');
+    let history = [];
+    try {
+        const stored = JSON.parse(localStorage.getItem('realEstateHistory') || '[]');
+        history = Array.isArray(stored) ? stored : [];
+    } catch (error) {
+        console.warn('기존 분석 기록이 손상되어 새 기록으로 시작합니다.', error);
+    }
     // 중복 조건 제거 후 맨 앞에 추가, 최대 10개
     history.unshift(historyItem);
     if (history.length > 10) history = history.slice(0, 10);
@@ -553,31 +812,46 @@ function saveHistory(data, lawdCd, dealYmd, selectedTypes) {
 }
 
 function renderHistory() {
-    const history = JSON.parse(localStorage.getItem('realEstateHistory') || '[]');
+    let history = [];
+    try {
+        const stored = JSON.parse(localStorage.getItem('realEstateHistory') || '[]');
+        history = Array.isArray(stored) ? stored : [];
+    } catch (error) {
+        console.warn('저장된 분석 기록을 읽지 못했습니다.', error);
+    }
 
     if (history.length === 0) {
-        historyList.innerHTML = '<p style="color:var(--text-dim); padding: 1rem;">저장된 리포트가 없습니다.</p>';
+        historyList.innerHTML = '<p class="history-empty">저장된 분석이 없습니다.</p>';
         return;
     }
 
-    historyList.innerHTML = history.map(item => `
-        <div class="history-card" onclick="loadHistoryItem(${item.sidoCd}, '${item.lawdCd}', '${item.dealYmd}', '${item.selectedTypes.join(',')}')">
-            <h4>${item.title}</h4>
-            <p>${item.desc}</p>
-            <span class="count-badge">${item.count}건</span>
-        </div>
-    `).join('');
+    historyList.innerHTML = history.map(item => {
+        const selectedTypes = Array.isArray(item.selectedTypes) ? item.selectedTypes.join(',') : '';
+        return `
+        <button class="history-card" type="button" data-sido="${escapeHtml(item.sidoCd)}" data-lawd="${escapeHtml(item.lawdCd)}" data-month="${escapeHtml(item.dealYmd)}" data-types="${escapeHtml(selectedTypes)}">
+            <h4>${escapeHtml(item.title)}</h4>
+            <p>${escapeHtml(item.desc)}</p>
+            <span class="count-badge">${escapeHtml(item.count)}건</span>
+        </button>
+    `;
+    }).join('');
 }
 
+historyList.addEventListener('click', event => {
+    const card = event.target.closest('.history-card');
+    if (!card) return;
+    window.loadHistoryItem(card.dataset.sido, card.dataset.lawd, card.dataset.month, card.dataset.types || '');
+});
+
 window.loadHistoryItem = function (sidoCd, lawdCd, dealYmd, typesStr) {
-    sidoSelect.value = sidoCd;
+    sidoSelect.value = String(sidoCd);
     sidoSelect.dispatchEvent(new Event('change'));
 
     setTimeout(() => {
         gugunSelect.value = lawdCd;
         dateSelect.value = dealYmd;
 
-        const types = typesStr.split(',');
+        const types = String(typesStr || '').split(',');
         document.querySelectorAll('input[name="type"]').forEach(cb => {
             cb.checked = types.includes(cb.value);
         });
@@ -595,16 +869,23 @@ clearHistoryBtn.addEventListener('click', () => {
 // 10. 조회 버튼 이벤트 (멀티 필터 결과 렌더링)
 // ===================================================================
 fetchBtn.addEventListener('click', async () => {
-    fetchBtn.disabled = true;
-    fetchBtn.innerText = "전국 데이터 통합 수집 중...";
-    analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state">선택된 유형의 실거래 데이터를 수집하고 있습니다...</td></tr>`;
+    setFetchButton(true);
+    setQueryStatus('선택한 유형의 공식 데이터를 모으고 있습니다.');
+    analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon loading-mark">◌</span><strong>데이터를 불러오는 중입니다.</strong><span>여러 유형을 선택하면 결과를 합쳐 정리합니다.</span></td></tr>`;
     paginationContainer.style.display = 'none';
 
-    const data = await getMultiTypeData();
+    let data = null;
+    try {
+        data = await getMultiTypeData();
+    } catch (error) {
+        console.error('조회 처리 실패:', error);
+        lastQueryHadError = true;
+        setQueryStatus('데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
+    }
 
     if (data !== null) {
         globalData = data;
-        filteredData = [...data];
+        filteredData = sortTransactions(data);
         currentPage = 1;
 
         // 행정동(umdNm) 고유 목록 추출 및 옵션 생성
@@ -619,30 +900,55 @@ fetchBtn.addEventListener('click', async () => {
         dongSelect.disabled = dongs.length === 0;
 
         renderTable();
+        renderMetrics(data);
+        renderTrend(data);
 
         if (data.length > 0) {
             updateTime.innerText = new Date().toLocaleTimeString();
+            setQueryStatus(
+                lastQueryHadPartialError
+                    ? `${data.length.toLocaleString()}건을 확인했습니다. 일부 유형은 연결에 실패했습니다.`
+                    : `${data.length.toLocaleString()}건을 확인했습니다.`,
+                lastQueryHadPartialError ? 'warning' : 'success'
+            );
 
             // 히스토리 저장
             const selectedTypes = Array.from(document.querySelectorAll('input[name="type"]:checked')).map(cb => cb.value);
             saveHistory(data, gugunSelect.value, dateSelect.value, selectedTypes);
+        } else {
+            setQueryStatus(
+                lastQueryHadPartialError
+                    ? '일부 유형의 데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+                    : '조건에 맞는 거래가 없습니다. 다른 기준 월이나 유형을 선택해 보세요.',
+                lastQueryHadPartialError ? 'warning' : ''
+            );
         }
     } else {
-        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state">데이터 조회 실패. 서버 연결을 확인해 주세요.</td></tr>`;
+        const errorMessage = lastQueryHadError
+            ? '데이터 연결에 실패했습니다.'
+            : '조건을 확인해 주세요.';
+        const errorHint = lastQueryHadError
+            ? '잠시 후 다시 시도하거나 다른 기준 월을 선택해 주세요.'
+            : '지역과 유형을 선택한 뒤 다시 시도해 주세요.';
+        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon">!</span><strong>${errorMessage}</strong><span>${errorHint}</span></td></tr>`;
         globalData = [];
         filteredData = [];
         dongSelect.innerHTML = '<option value="">읍/면/동 전체 (조회 후 활성화)</option>';
         dongSelect.disabled = true;
+        renderMetrics([]);
+        renderTrend([]);
     }
 
-    fetchBtn.disabled = false;
-    fetchBtn.innerText = "실시간 통합 조회";
+    setFetchButton(false);
 });
 
 // ===================================================================
 // 11. 초기화
 // ===================================================================
 initDateOptions();
+initTheme();
+renderMetrics([]);
+renderTrend([]);
 renderHistory();
 
 console.log("🚀 부동산 분석 PRO v14 - Cloudflare 통합 모드");

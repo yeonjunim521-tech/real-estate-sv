@@ -27,4 +27,23 @@ describe("Cloudflare frontend", () => {
     expect(image.readUInt32BE(16)).toBe(1200)
     expect(image.readUInt32BE(20)).toBe(630)
   })
+
+  it("includes the analysis dashboard controls and inline status surfaces", async () => {
+    const [html, script] = await Promise.all([
+      readFile(resolve("site/index.html"), "utf8"),
+      readFile(resolve("site/main.js"), "utf8"),
+    ])
+
+    for (const id of ["theme-toggle", "query-status", "stat-total", "stat-median", "stat-average", "stat-valid", "stat-cancelled", "trend-bars", "trend-summary", "sort-select", "detail-panel", "detail-source", "detail-history-list"]) {
+      expect(html).toContain(`id="${id}"`)
+    }
+    expect(html).toContain('data-theme="light"')
+    expect(script).toContain("renderMetrics")
+    expect(script).toContain("escapeHtml")
+    expect(script).toContain('data-action="detail"')
+    expect(script).toContain("sortTransactions")
+    expect(script).toContain("국토교통부 실거래가 Open API")
+    expect(script).toContain("realEstateTheme")
+    expect(script).toContain("setQueryStatus")
+  })
 })

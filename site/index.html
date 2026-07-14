@@ -1,143 +1,169 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>부동산 분석 PRO | 전국 8종 통합 실거래가 분석 플랫폼</title>
-    <meta name="description" content="국토교통부 실거래가를 지역·기간·부동산 유형별로 한눈에 분석하는 통합 대시보드">
+    <title>부동산 분석 PRO | 통합 분석 대시보드</title>
+    <meta name="description" content="국토교통부 실거래가를 지역·기간·유형별로 분석하는 통합 부동산 대시보드">
     <meta property="og:type" content="website">
     <meta property="og:title" content="부동산 분석 PRO">
-    <meta property="og:description" content="전국 8종 부동산 실거래가 통합 분석 대시보드">
+    <meta property="og:description" content="전국 부동산 실거래가 통합 분석 대시보드">
     <meta property="og:image" content="/real-estate-pro-og.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="부동산 분석 PRO">
-    <meta name="twitter:description" content="전국 8종 부동산 실거래가 통합 분석 대시보드">
+    <meta name="twitter:description" content="전국 부동산 실거래가 통합 분석 대시보드">
     <meta name="twitter:image" content="/real-estate-pro-og.png">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- 상단 헤더 -->
-        <header class="main-header">
-            <div class="brand">
-                <h1>부동산 <span class="accent">분석 PRO</span></h1>
-                <p>전국 실시간 동기화 | 8대 부동산 유형 통합 대시보드</p>
-            </div>
-            <div class="update-status">
-                <span class="pulse"></span> LIVE <span id="update-time">-</span>
+    <a class="skip-link" href="#main-content">본문으로 바로가기</a>
+    <div class="app-shell">
+        <header class="site-header">
+            <a class="brand" href="/" aria-label="부동산 분석 PRO 홈">
+                <span class="brand-mark" aria-hidden="true">B</span>
+                <span class="brand-copy">
+                    <strong>부동산 분석 <em>PRO</em></strong>
+                    <small>공식 데이터 기반 시장 읽기</small>
+                </span>
+            </a>
+            <nav class="top-nav" aria-label="주요 메뉴">
+                <button class="nav-item is-active" type="button">통합 분석</button>
+                <button class="nav-item" type="button" disabled>빅데이터 지도 <span>준비 중</span></button>
+                <button class="nav-item" type="button" disabled>비교 분석 <span>준비 중</span></button>
+            </nav>
+            <div class="header-actions">
+                <button id="theme-toggle" class="icon-button" type="button" aria-label="다크모드로 전환">◐<span>테마</span></button>
+                <span class="live-indicator"><i></i> 데이터 연결됨</span>
             </div>
         </header>
 
-        <!-- 8가지 필터 섹션 (주거용 / 상업·기타) -->
-        <section class="filter-dashboard">
-            <div class="filter-group">
-                <span class="group-label">주거용 부동산</span>
-                <div class="filter-chips">
-                    <label class="chip"><input type="checkbox" name="type" value="apt"><span>아파트 매매</span></label>
-                    <label class="chip"><input type="checkbox" name="type" value="rhous"><span>연립/다세대</span></label>
-                    <label class="chip"><input type="checkbox" name="type" value="shous"><span>단독/다가구</span></label>
-                    <label class="chip"><input type="checkbox" name="type" value="right"><span>분양/입주권</span></label>
+        <main id="main-content">
+            <section class="hero-panel" aria-labelledby="hero-title">
+                <div class="hero-copy">
+                    <p class="eyebrow">MARKET INTELLIGENCE / 2026</p>
+                    <h1 id="hero-title">지역의 움직임을<br><span>한 화면에서 읽습니다.</span></h1>
+                    <p class="hero-description">거래 가격부터 거래량, 면적 기준까지<br class="desktop-break"> 공식 실거래 데이터를 같은 기준으로 정리합니다.</p>
+                    <div class="hero-meta">
+                        <span class="meta-chip"><i></i> 국토교통부 실거래가</span>
+                        <span class="meta-note">최근 업데이트 <b id="update-time">조회 전</b></span>
+                    </div>
                 </div>
-            </div>
-            <div class="filter-group">
-                <span class="group-label">상업/공업/기타</span>
-                <div class="filter-chips">
-                    <label class="chip"><input type="checkbox" name="type" value="office"><span>오피스텔</span></label>
-                    <label class="chip"><input type="checkbox" name="type" value="comm"><span>상업업무용</span></label>
-                    <label class="chip"><input type="checkbox" name="type" value="fact"><span>공장/창고 등</span></label>
-                    <label class="chip"><input type="checkbox" name="type" value="land"><span>토지/임야</span></label>
+                <div class="hero-brief" aria-label="서비스 안내">
+                    <span class="brief-label">오늘의 기준</span>
+                    <strong>신고된 거래를<br>있는 그대로</strong>
+                    <p>취소 거래는 구분하고,<br>분석값에는 기준일을 남깁니다.</p>
+                    <span class="brief-mark" aria-hidden="true">↗</span>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <!-- 지역 및 기간 선택 -->
-        <main class="dashboard-card">
-            <div class="dashboard-toolbar">
-                <div class="search-filters">
-                    <!-- 전국 17개 시/도 완전 탑재 -->
-                    <select id="sido-select">
-                        <option value="">시/도 선택</option>
-                        <option value="11">서울특별시</option>
-                        <option value="26">부산광역시</option>
-                        <option value="27">대구광역시</option>
-                        <option value="28">인천광역시</option>
-                        <option value="29">광주광역시</option>
-                        <option value="30">대전광역시</option>
-                        <option value="31">울산광역시</option>
-                        <option value="36">세종특별자치시</option>
-                        <option value="41">경기도</option>
-                        <option value="42">강원특별자치도</option>
-                        <option value="43">충청북도</option>
-                        <option value="44">충청남도</option>
-                        <option value="45">전북특별자치도</option>
-                        <option value="46">전라남도</option>
-                        <option value="47">경상북도</option>
-                        <option value="48">경상남도</option>
-                        <option value="50">제주특별자치도</option>
-                    </select>
-                    <select id="gugun-select">
-                        <option value="">시/군/구 선택</option>
-                    </select>
-                    <!-- 행정동(읍/면/동) 필터 추가 -->
-                    <select id="dong-select" disabled>
-                        <option value="">읍/면/동 전체 (조회 후 활성화)</option>
-                    </select>
-                    <!-- JS에서 현재 날짜 기준 자동 생성 -->
-                    <select id="date-select"></select>
-                    <button id="fetch-live-btn" class="live-btn">실시간 통합 조회</button>
+            <section class="query-panel" aria-labelledby="query-title">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="eyebrow">01 / SEARCH</p>
+                        <h2 id="query-title">분석 조건을 정하세요</h2>
+                    </div>
+                    <p class="section-note">한 번에 여러 유형을 선택할 수 있습니다.</p>
                 </div>
-            </div>
 
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>매물 정보 / 유형</th>
-                            <th>거래 금액</th>
-                            <th>계약 일자</th>
-                            <th>면적 분석 (m² → 평)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="analysis-body">
-                        <tr>
-                            <td colspan="4" class="empty-state">조회할 유형을 선택하고 지역을 설정해 주세요.</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                <div class="type-selector">
+                    <div class="type-heading"><span>부동산 유형</span><small>필수 선택</small></div>
+                    <div class="type-groups">
+                        <div class="type-group">
+                            <span class="group-label">주거</span>
+                            <div class="filter-chips">
+                                <label class="chip"><input type="checkbox" name="type" value="apt"><span>아파트</span></label>
+                                <label class="chip"><input type="checkbox" name="type" value="rhous"><span>연립·다세대</span></label>
+                                <label class="chip"><input type="checkbox" name="type" value="shous"><span>단독·다가구</span></label>
+                                <label class="chip"><input type="checkbox" name="type" value="right"><span>분양·입주권</span></label>
+                            </div>
+                        </div>
+                        <div class="type-group">
+                            <span class="group-label">비주거</span>
+                            <div class="filter-chips">
+                                <label class="chip"><input type="checkbox" name="type" value="office"><span>오피스텔</span></label>
+                                <label class="chip"><input type="checkbox" name="type" value="comm"><span>상업·업무</span></label>
+                                <label class="chip"><input type="checkbox" name="type" value="fact"><span>공장·창고</span></label>
+                                <label class="chip"><input type="checkbox" name="type" value="land"><span>토지</span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-            <!-- 페이지네이션 컨트롤 바 추가 -->
-            <div class="pagination-container" id="pagination-container" style="display: none;">
-                <div class="page-size-selector">
-                    <label for="page-size">표시 갯수:</label>
-                    <select id="page-size">
-                        <option value="10">10개씩 보기</option>
-                        <option value="30" selected>30개씩 보기</option>
-                        <option value="50">50개씩 보기</option>
-                    </select>
+                <div class="query-grid">
+                    <label class="field"><span>시·도</span><select id="sido-select"><option value="">시/도 선택</option><option value="11">서울특별시</option><option value="26">부산광역시</option><option value="27">대구광역시</option><option value="28">인천광역시</option><option value="29">광주광역시</option><option value="30">대전광역시</option><option value="31">울산광역시</option><option value="36">세종특별자치시</option><option value="41">경기도</option><option value="42">강원특별자치도</option><option value="43">충청북도</option><option value="44">충청남도</option><option value="45">전북특별자치도</option><option value="46">전라남도</option><option value="47">경상북도</option><option value="48">경상남도</option><option value="50">제주특별자치도</option></select></label>
+                    <label class="field"><span>시·군·구</span><select id="gugun-select"><option value="">시/군/구 선택</option></select></label>
+                    <label class="field"><span>기준 월</span><select id="date-select"></select></label>
+                    <label class="field"><span>읍·면·동 <small>선택</small></span><select id="dong-select" disabled><option value="">조회 후 선택</option></select></label>
+                    <button id="fetch-live-btn" class="primary-button" type="button"><span class="button-icon">↗</span><span>분석 시작</span></button>
                 </div>
-                <div class="page-controls">
-                    <button id="prev-page-btn" class="page-btn" disabled>이전</button>
-                    <span id="page-info">1 / 1</span>
-                    <button id="next-page-btn" class="page-btn" disabled>다음</button>
+                <p id="query-status" class="query-status" role="status">유형과 지역을 선택하면 최신 신고 데이터를 불러옵니다.</p>
+            </section>
+
+            <section class="metrics-section" aria-labelledby="metrics-title">
+                <div class="section-heading">
+                    <div><p class="eyebrow">02 / SNAPSHOT</p><h2 id="metrics-title">시장 요약</h2></div>
+                    <span class="data-basis">분석 결과 기준 · <b id="metric-period">조회 전</b></span>
                 </div>
-            </div>
+                <div class="metric-grid">
+                    <article class="metric-card metric-primary"><span class="metric-label">유효 거래</span><strong id="stat-total">—</strong><small>신고된 전체 거래</small></article>
+                    <article class="metric-card"><span class="metric-label">중앙 거래가</span><strong id="stat-median">—</strong><small>이상치 영향을 줄인 대표값</small></article>
+                    <article class="metric-card"><span class="metric-label">평균 거래가</span><strong id="stat-average">—</strong><small>전체 거래 산술 평균</small></article>
+                    <article class="metric-card"><span class="metric-label">거래 유형</span><strong id="stat-types">—</strong><small>현재 선택된 유형</small></article>
+                </div>
+                <div class="metric-split" aria-label="거래 상태 요약"><span><b id="stat-valid">—</b> 유효 거래</span><span><b id="stat-cancelled">—</b> 취소 거래</span><span>분석은 유효 거래 기준</span></div>
+            </section>
+
+            <section class="insight-grid" aria-label="가격과 거래량 요약">
+                <article class="insight-card trend-card">
+                    <div class="card-heading"><div><span class="eyebrow">PRICE TREND</span><h3>거래 가격 흐름</h3></div><span id="trend-caption" class="card-caption">데이터를 조회하면 표시됩니다</span></div>
+                    <div id="trend-bars" class="trend-bars" role="img" aria-label="월별 거래 가격 흐름"><div class="chart-empty">분석을 시작하면 월별 흐름을 보여드립니다.</div></div>
+                    <p id="trend-summary" class="sr-only">분석을 시작하면 월별 가격 흐름이 표시됩니다.</p>
+                    <div class="chart-axis"><span>과거</span><span>최근</span></div>
+                </article>
+                <article class="insight-card guide-card">
+                    <span class="eyebrow">READ THE DATA</span>
+                    <h3>숫자보다<br><em>기준</em>을 먼저 봅니다.</h3>
+                    <ul><li><i>01</i><span>대표 가격은 중앙값을 우선합니다.</span></li><li><i>02</i><span>면적 기준을 유형별로 분리합니다.</span></li><li><i>03</i><span>취소 거래는 별도로 확인합니다.</span></li></ul>
+                </article>
+            </section>
+
+            <section class="results-section" aria-labelledby="results-title">
+                <div class="section-heading result-heading">
+                    <div><p class="eyebrow">03 / TRANSACTIONS</p><h2 id="results-title">실거래 목록</h2><p id="results-summary" class="results-summary">조회 조건을 선택하면 거래가 표시됩니다.</p></div>
+                    <div class="result-tools"><span id="result-count" class="result-count">0건</span><label class="compact-control" for="sort-select">정렬<select id="sort-select"><option value="date-desc">최신 계약일</option><option value="price-desc">거래 금액 높은순</option><option value="price-asc">거래 금액 낮은순</option><option value="size-desc">면적 큰순</option></select></label></div>
+                </div>
+                <div class="table-shell">
+                    <table aria-label="부동산 실거래 목록">
+                        <thead><tr><th>매물 정보</th><th>거래 금액</th><th>계약일</th><th>면적·평당가</th></tr></thead>
+                        <tbody id="analysis-body"><tr><td colspan="4" class="empty-state"><span class="empty-icon">⌕</span><strong>아직 분석 결과가 없습니다.</strong><span>상단에서 유형, 지역, 기준 월을 선택해 시작하세요.</span></td></tr></tbody>
+                    </table>
+                </div>
+                <div class="pagination-container" id="pagination-container" style="display: none;">
+                    <div class="page-size-selector"><label for="page-size">페이지당</label><select id="page-size"><option value="10">10건</option><option value="30" selected>30건</option><option value="50">50건</option></select></div>
+                    <div class="page-controls"><button id="prev-page-btn" class="page-btn" type="button" disabled>이전</button><span id="page-info">1 / 1</span><button id="next-page-btn" class="page-btn" type="button" disabled>다음</button></div>
+                </div>
+            </section>
+
+            <aside id="detail-panel" class="detail-panel" aria-labelledby="detail-title" hidden>
+                <div class="detail-heading"><div><p class="eyebrow">TRANSACTION DETAIL</p><h2 id="detail-title">거래 상세</h2></div><button id="detail-close" class="icon-button" type="button" aria-label="거래 상세 닫기">×</button></div>
+                <div class="detail-summary"><strong id="detail-price">—</strong><span id="detail-status" class="detail-status">유효 거래</span></div>
+                <dl class="detail-list"><div><dt>부동산</dt><dd id="detail-name">—</dd></div><div><dt>유형</dt><dd id="detail-type">—</dd></div><div><dt>계약일</dt><dd id="detail-date">—</dd></div><div><dt>면적</dt><dd id="detail-size">—</dd></div><div><dt>층</dt><dd id="detail-floor">—</dd></div><div><dt>건축년도</dt><dd id="detail-year">—</dd></div><div><dt>주소</dt><dd id="detail-address">—</dd></div><div><dt>원천 데이터</dt><dd id="detail-source">—</dd></div><div><dt>확인 상태</dt><dd id="detail-confidence">—</dd></div><div><dt>조회 시각</dt><dd id="detail-updated">—</dd></div><div><dt>규제 정보</dt><dd>공식 토지이용·건축물 데이터 연동 예정</dd></div></dl>
+                <section class="detail-history" aria-labelledby="detail-history-title"><h3 id="detail-history-title">같은 주소 최근 거래</h3><div id="detail-history-list" class="detail-history-list"><p class="history-empty">거래를 선택하면 최근 이력이 표시됩니다.</p></div></section>
+                <p class="detail-footnote">이 패널은 거래 원자료를 요약합니다. 용도지역과 개발 가능성은 공식 확인 링크가 연결된 뒤 별도로 판단하세요.</p>
+            </aside>
+
+            <section class="history-section" aria-labelledby="history-title">
+                <div class="section-heading compact"><div><p class="eyebrow">04 / SAVED</p><h2 id="history-title">최근 분석</h2></div><button id="clear-history-btn" class="text-button danger" type="button">기록 삭제</button></div>
+                <div id="history-list" class="history-grid"><p class="history-empty">저장된 분석이 없습니다.</p></div>
+            </section>
         </main>
 
-        <footer class="history-section">
-            <div class="history-header">
-                <h3>최근 분석 리포트</h3>
-                <button id="clear-history-btn" class="clear-btn">리포트 삭제</button>
-            </div>
-            <div id="history-list" class="history-grid">
-                <!-- 자바스크립트로 리포트 카드가 추가됩니다 -->
-            </div>
-        </footer>
+        <footer class="site-footer"><span>공식 공개 데이터로 확인한 현재값입니다.</span><span>부동산 분석 PRO · v2.0</span></footer>
     </div>
-
     <script src="main.js"></script>
 </body>
 </html>

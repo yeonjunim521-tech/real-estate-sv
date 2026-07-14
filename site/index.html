@@ -134,11 +134,11 @@
             <section class="results-section" aria-labelledby="results-title">
                 <div class="section-heading result-heading">
                     <div><p class="eyebrow">03 / TRANSACTIONS</p><h2 id="results-title">실거래 목록</h2><p id="results-summary" class="results-summary">조회 조건을 선택하면 거래가 표시됩니다.</p></div>
-                    <div class="result-tools"><span id="result-count" class="result-count">0건</span><label class="compact-control" for="sort-select">정렬<select id="sort-select"><option value="date-desc">최신 계약일</option><option value="price-desc">거래 금액 높은순</option><option value="price-asc">거래 금액 낮은순</option><option value="size-desc">면적 큰순</option></select></label></div>
+                    <div class="result-tools"><span id="result-count" class="result-count">0건</span><button id="export-csv-btn" class="text-button" type="button" disabled>CSV 저장</button><div class="columns-control"><button id="columns-toggle" class="text-button" type="button" aria-expanded="false" aria-controls="columns-menu">열 설정</button><div id="columns-menu" class="columns-menu" hidden><label><input type="checkbox" data-column-toggle="property" checked>매물 정보</label><label><input type="checkbox" data-column-toggle="price" checked>거래 금액</label><label><input type="checkbox" data-column-toggle="date" checked>계약일</label><label><input type="checkbox" data-column-toggle="analysis" checked>면적·평당가</label></div></div><label class="compact-control" for="sort-select">정렬<select id="sort-select"><option value="date-desc">최신 계약일</option><option value="price-desc">거래 금액 높은순</option><option value="price-asc">거래 금액 낮은순</option><option value="size-desc">면적 큰순</option></select></label></div>
                 </div>
                 <div class="table-shell">
                     <table aria-label="부동산 실거래 목록">
-                        <thead><tr><th>매물 정보</th><th>거래 금액</th><th>계약일</th><th>면적·평당가</th></tr></thead>
+                        <thead><tr><th data-column="property">매물 정보</th><th data-column="price">거래 금액</th><th data-column="date">계약일</th><th data-column="analysis">면적·평당가</th></tr></thead>
                         <tbody id="analysis-body"><tr><td colspan="4" class="empty-state"><span class="empty-icon">⌕</span><strong>아직 분석 결과가 없습니다.</strong><span>상단에서 유형, 지역, 기준 월을 선택해 시작하세요.</span></td></tr></tbody>
                     </table>
                 </div>

@@ -598,10 +598,11 @@ function runInlineAnalysis(btn, size, price, label = '면적') {
     if (!row) return;
     const target = row.querySelector('.analysis-target');
     if (!target) return;
+    const detailAction = target.querySelector('[data-action="detail"]')?.outerHTML || '';
     const sizeNum = parseFloat(size);
 
     if (sizeNum <= 0 || isNaN(sizeNum)) {
-        target.innerHTML = '<span style="color: #ef4444; font-size: 0.85rem;">면적 정보 없음</span>';
+        target.innerHTML = `<span style="color: #ef4444; font-size: 0.85rem;">면적 정보 없음</span>${detailAction}`;
         return;
     }
 
@@ -613,6 +614,7 @@ function runInlineAnalysis(btn, size, price, label = '면적') {
             <span class="area-badge" title="계산기준: ${escapeHtml(label)}">${escapeHtml(label)} ${escapeHtml(size)}㎡ (${py}평)</span>
             <span class="price-col">평당 ${ppp.toLocaleString()}만원</span>
             <button class="small-reset-btn" type="button" data-action="reset" data-size="${escapeHtml(size)}" data-price="${price}" data-label="${escapeHtml(label)}">↩</button>
+            ${detailAction}
         </div>
     `;
 }
@@ -620,7 +622,8 @@ function runInlineAnalysis(btn, size, price, label = '면적') {
 function resetRow(btn, size, price, label) {
     const target = btn.closest('.analysis-target');
     if (!target) return;
-    target.innerHTML = `<button class="analyze-btn" type="button" data-action="analyze" data-size="${escapeHtml(size)}" data-price="${price}" data-label="${escapeHtml(label)}">평당가 산출</button>`;
+    const detailAction = target.querySelector('[data-action="detail"]')?.outerHTML || '';
+    target.innerHTML = `<button class="analyze-btn" type="button" data-action="analyze" data-size="${escapeHtml(size)}" data-price="${price}" data-label="${escapeHtml(label)}">평당가 산출</button>${detailAction}`;
 }
 
 // ===================================================================

@@ -48,4 +48,15 @@ describe("Cloudflare frontend", () => {
     expect(script).toContain("realEstateTheme")
     expect(script).toContain("setQueryStatus")
   })
+
+  it("preserves the detail action when inline price analysis is toggled", async () => {
+    const script = await readFile(resolve("site/main.js"), "utf8")
+    const analyzeFunction = script.match(/function runInlineAnalysis[\s\S]*?\n}/)?.[0] ?? ""
+    const resetFunction = script.match(/function resetRow[\s\S]*?\n}/)?.[0] ?? ""
+
+    expect(analyzeFunction).toContain("const detailAction")
+    expect(analyzeFunction).toContain("${detailAction}")
+    expect(resetFunction).toContain("const detailAction")
+    expect(resetFunction).toContain("${detailAction}")
+  })
 })

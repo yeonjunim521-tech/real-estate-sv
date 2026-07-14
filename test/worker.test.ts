@@ -36,6 +36,27 @@ describe("handleApiRequest", () => {
     expect(upstreamUrl.searchParams.get("numOfRows")).toBe("100")
   })
 
+  it("routes a factory and warehouse request to the official MOLIT endpoint", async () => {
+    const fetchUpstream = vi.fn(async (
+      _input: Parameters<typeof fetch>[0],
+      _init?: Parameters<typeof fetch>[1],
+    ) =>
+      Response.json({ response: { header: { resultCode: "000" } } }),
+    )
+
+    const response = await handleApiRequest(
+      apiRequest("type=fact&lawdCd=11680&dealYmd=202606"),
+      secret,
+      fetchUpstream,
+    )
+
+    expect(response.status).toBe(200)
+    const upstreamUrl = new URL(String(fetchUpstream.mock.calls[0]?.[0]))
+    expect(upstreamUrl.pathname).toBe(
+      "/1613000/RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade",
+    )
+  })
+
   it("caches successful responses with a key that excludes the service key", async () => {
     const entries = new Map<string, Response>()
     const cache = {

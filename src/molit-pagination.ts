@@ -59,7 +59,12 @@ async function fetchPage(
   const pageUrl = new URL(url)
   pageUrl.searchParams.set("numOfRows", String(PAGE_SIZE))
   pageUrl.searchParams.set("pageNo", String(pageNo))
-  return fetchUpstream(pageUrl.toString(), { headers: { Accept: "application/json" } })
+  const request = () => fetchUpstream(pageUrl.toString(), { headers: { Accept: "application/json" } })
+  const response = await request()
+  if (response.status < 500) return response
+
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  return request()
 }
 
 export async function fetchAllMolitPages(

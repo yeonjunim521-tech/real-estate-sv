@@ -72,7 +72,36 @@ describe("MOLIT pagination", () => {
 
     expect(response.status).toBe(503)
     expect(await response.json()).toEqual({ error: "국토부 API 요청이 실패했습니다." })
-    expect(fetchUpstream).toHaveBeenCalledTimes(2)
+    expect(fetchUpstream).toHaveBeenCalledTimes(3)
+  })
+
+  it("retries a transient later-page server error once", async () => {
+    let secondPageAttempts = 0
+    const fetchUpstream = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const pageNo = Number(new URL(String(input)).searchParams.get("pageNo") ?? "1")
+      if (pageNo === 2 && secondPageAttempts++ === 0) {
+        return new Response(null, { status: 504 })
+      }
+
+      return Response.json({
+        response: {
+          header: { resultCode: "000" },
+          body: {
+            items: { item: pageNo === 1 ? [{ id: 1 }] : [{ id: 2 }] },
+            numOfRows: 100,
+            pageNo,
+            totalCount: 101,
+          },
+        },
+      })
+    })
+
+    const response = await handleApiRequest(apiRequest(), secret, fetchUpstream)
+    const body = await response.json() as { response: { body: { items: { item: unknown[] } } } }
+
+    expect(response.status).toBe(200)
+    expect(body.response.body.items.item).toEqual([{ id: 1 }, { id: 2 }])
+    expect(fetchUpstream).toHaveBeenCalledTimes(3)
   })
 
   it("removes an identical transaction repeated across page boundaries", async () => {

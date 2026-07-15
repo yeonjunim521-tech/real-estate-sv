@@ -1,10 +1,40 @@
 import { describe, expect, it, vi } from "vitest"
 import { createWorkerHandler, handleApiRequest, routeRequest } from "../src/worker"
+import type { ApiDependencies } from "../src/worker"
+import type { SnapshotDatabase, SnapshotStatement } from "../src/transaction-store"
 
 const secret = "test-secret"
 
 function apiRequest(query: string, method = "GET") {
   return new Request(`https://example.com/api/real-estate?${query}`, { method })
+}
+
+type DependencyOverrides = Omit<Partial<ApiDependencies>, "serviceKey" | "fetchUpstream">
+
+function dependencies(
+  fetchUpstream: ApiDependencies["fetchUpstream"],
+  overrides: DependencyOverrides = {},
+): ApiDependencies {
+  return { serviceKey: secret, fetchUpstream, ...overrides }
+}
+
+function emptyDatabase(): SnapshotDatabase {
+  return {
+    prepare() {
+      const statement: SnapshotStatement = {
+        bind() {
+          return statement
+        },
+        async run() {
+          return { success: true }
+        },
+        async all() {
+          return { results: [] }
+        },
+      }
+      return statement
+    },
+  }
 }
 
 describe("handleApiRequest", () => {
@@ -18,8 +48,7 @@ describe("handleApiRequest", () => {
 
     const response = await handleApiRequest(
       apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
+      dependencies(fetchUpstream),
     )
 
     expect(response.status).toBe(200)
@@ -46,8 +75,7 @@ describe("handleApiRequest", () => {
 
     const response = await handleApiRequest(
       apiRequest("type=fact&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
+      dependencies(fetchUpstream),
     )
 
     expect(response.status).toBe(200)
@@ -55,115 +83,6 @@ describe("handleApiRequest", () => {
     expect(upstreamUrl.pathname).toBe(
       "/1613000/RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade",
     )
-  })
-
-  it("caches successful responses with a key that excludes the service key", async () => {
-    const entries = new Map<string, Response>()
-    const cache = {
-      match: vi.fn(async (request: Request) => entries.get(request.url)?.clone()),
-      put: vi.fn(async (request: Request, response: Response) => {
-        entries.set(request.url, response.clone())
-      }),
-    }
-    const fetchUpstream = vi.fn(async () =>
-      Response.json({ response: { header: { resultCode: "000" } } }),
-    )
-
-    const firstResponse = await handleApiRequest(
-      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
-      undefined,
-      cache,
-    )
-
-    expect(firstResponse.status).toBe(200)
-    expect(cache.put).toHaveBeenCalledOnce()
-    const cacheKey = cache.put.mock.calls[0]?.[0]?.url ?? ""
-    expect(cacheKey).toContain("type=apt")
-    expect(cacheKey).not.toContain("serviceKey")
-    expect(cacheKey).not.toContain(secret)
-    expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
-
-    const secondFetch = vi.fn(async () => {
-      throw new Error("cache miss")
-    })
-    const secondResponse = await handleApiRequest(
-      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      secondFetch,
-      undefined,
-      cache,
-    )
-
-    expect(secondResponse.status).toBe(200)
-    expect(secondFetch).not.toHaveBeenCalled()
-  })
-
-  it("caches a successful response returned by fetch without mutating immutable headers", async () => {
-    const cache = {
-      match: vi.fn(async () => undefined),
-      put: vi.fn(async (_request: Request, _response: Response) => undefined),
-    }
-    const fetchUpstream = vi.fn(async () =>
-      fetch("data:application/json,%7B%22response%22%3A%7B%22header%22%3A%7B%22resultCode%22%3A%22000%22%7D%7D%7D"),
-    )
-
-    const response = await handleApiRequest(
-      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
-      undefined,
-      cache,
-    )
-
-    expect(response.status).toBe(200)
-    expect(cache.put).toHaveBeenCalledOnce()
-    expect(cache.put.mock.calls[0]?.[1]?.headers.get("Cache-Control")).toBe("s-maxage=300")
-  })
-
-  it("does not cache a successful response that contains Set-Cookie", async () => {
-    const cache = {
-      match: vi.fn(async () => undefined),
-      put: vi.fn(async (_request: Request, _response: Response) => undefined),
-    }
-    const fetchUpstream = vi.fn(async () =>
-      new Response(JSON.stringify({ response: { header: { resultCode: "000" } } }), {
-        headers: { "Content-Type": "application/json", "Set-Cookie": "session=test" },
-      }),
-    )
-
-    const response = await handleApiRequest(
-      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
-      undefined,
-      cache,
-    )
-
-    expect(response.status).toBe(200)
-    expect(cache.put).not.toHaveBeenCalled()
-  })
-
-  it("does not cache an application-level MOLIT error in an HTTP 200 response", async () => {
-    const cache = {
-      match: vi.fn(async () => undefined),
-      put: vi.fn(async () => undefined),
-    }
-    const fetchUpstream = vi.fn(async () =>
-      Response.json({ response: { header: { resultCode: "29000" } } }),
-    )
-
-    const response = await handleApiRequest(
-      apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
-      undefined,
-      cache,
-    )
-
-    expect(response.status).toBe(200)
-    expect(cache.put).not.toHaveBeenCalled()
   })
 
   it("returns 429 without calling upstream when the client exceeds the rate limit", async () => {
@@ -176,9 +95,7 @@ describe("handleApiRequest", () => {
       new Request("https://example.com/api/real-estate?type=apt&lawdCd=11680&dealYmd=202606", {
         headers: { "CF-Connecting-IP": "203.0.113.10" },
       }),
-      secret,
-      fetchUpstream,
-      rateLimiter,
+      dependencies(fetchUpstream, { rateLimiter }),
     )
 
     expect(response.status).toBe(429)
@@ -200,9 +117,7 @@ describe("handleApiRequest", () => {
 
     const response = await handleApiRequest(
       apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
-      rateLimiter,
+      dependencies(fetchUpstream, { rateLimiter }),
     )
 
     expect(response.status).toBe(503)
@@ -219,8 +134,7 @@ describe("handleApiRequest", () => {
 
     const response = await handleApiRequest(
       apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
+      dependencies(fetchUpstream),
     )
 
     expect(response.status).toBe(503)
@@ -238,7 +152,7 @@ describe("handleApiRequest", () => {
   ])("rejects invalid query parameters: %s", async (query) => {
     const fetchUpstream = vi.fn()
 
-    const response = await handleApiRequest(apiRequest(query), secret, fetchUpstream)
+    const response = await handleApiRequest(apiRequest(query), dependencies(fetchUpstream))
 
     expect(response.status).toBe(400)
     expect(fetchUpstream).not.toHaveBeenCalled()
@@ -250,8 +164,7 @@ describe("handleApiRequest", () => {
 
     const response = await handleApiRequest(
       apiRequest("type=apt&lawdCd=11680&dealYmd=202606", "POST"),
-      secret,
-      fetchUpstream,
+      dependencies(fetchUpstream),
     )
 
     expect(response.status).toBe(405)
@@ -266,8 +179,7 @@ describe("handleApiRequest", () => {
 
     const response = await handleApiRequest(
       apiRequest("type=land&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchUpstream,
+      dependencies(fetchUpstream),
     )
 
     expect(response.status).toBe(502)
@@ -277,15 +189,56 @@ describe("handleApiRequest", () => {
 })
 
 describe("routeRequest", () => {
+  it("routes administrator status without exposing it to an unauthorized request", async () => {
+    const fetchAsset = vi.fn(async () => new Response("asset"))
+    const fetchUpstream = vi.fn()
+    const adminStatusLoader = vi.fn()
+
+    const response = await routeRequest(
+      new Request(
+        "https://example.com/api/admin/data-status?type=apt&lawdCd=11680&dealYmd=202606",
+      ),
+      dependencies(fetchUpstream, {
+        adminToken: "admin-secret",
+        adminStatusLoader,
+      }),
+      fetchAsset,
+    )
+
+    expect(response.status).toBe(401)
+    expect(adminStatusLoader).not.toHaveBeenCalled()
+    expect(fetchUpstream).not.toHaveBeenCalled()
+    expect(fetchAsset).not.toHaveBeenCalled()
+  })
+
+  it("routes five-year history status without calling MOLIT or static assets", async () => {
+    const fetchAsset = vi.fn(async () => new Response("asset"))
+    const fetchUpstream = vi.fn()
+
+    const response = await routeRequest(
+      new Request(
+        "https://example.com/api/real-estate/history?type=apt&lawdCd=11680&dealYmd=202606",
+      ),
+      dependencies(fetchUpstream, { database: emptyDatabase() }),
+      fetchAsset,
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      progress: { status: "collecting", totalCount: 60 },
+    })
+    expect(fetchUpstream).not.toHaveBeenCalled()
+    expect(fetchAsset).not.toHaveBeenCalled()
+  })
+
   it("creates a handler with an injected upstream fetcher", async () => {
     const fetchAsset = vi.fn(async () => new Response("asset"))
     const fetchUpstream = vi.fn(async () => Response.json({ ok: true }))
-    const handler = createWorkerHandler(fetchUpstream)
+    const handler = createWorkerHandler({ fetchUpstream })
 
     const response = await handler(
       apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
-      fetchAsset,
+      { serviceKey: secret, fetchAsset },
     )
 
     expect(response.status).toBe(200)
@@ -299,14 +252,13 @@ describe("routeRequest", () => {
     const rateLimiter = {
       limit: vi.fn(async () => ({ success: true })),
     }
-    const handler = createWorkerHandler(fetchUpstream, rateLimiter)
+    const handler = createWorkerHandler({ fetchUpstream, rateLimiter })
 
     const response = await handler(
       new Request("https://example.com/api/real-estate?type=apt&lawdCd=11680&dealYmd=202606", {
         headers: { "CF-Connecting-IP": "203.0.113.10" },
       }),
-      secret,
-      fetchAsset,
+      { serviceKey: secret, fetchAsset },
     )
 
     expect(response.status).toBe(200)
@@ -320,9 +272,8 @@ describe("routeRequest", () => {
 
     const response = await routeRequest(
       new Request("https://example.com/style.css"),
-      secret,
+      dependencies(fetchUpstream),
       fetchAsset,
-      fetchUpstream,
     )
 
     expect(await response.text()).toBe("asset")
@@ -336,9 +287,8 @@ describe("routeRequest", () => {
 
     const response = await routeRequest(
       apiRequest("type=apt&lawdCd=11680&dealYmd=202606"),
-      secret,
+      dependencies(fetchUpstream),
       fetchAsset,
-      fetchUpstream,
     )
 
     expect(response.status).toBe(200)

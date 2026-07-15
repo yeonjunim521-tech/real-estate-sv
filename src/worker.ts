@@ -1,20 +1,36 @@
-import { fetchAllMolitPages } from "./molit-pagination"
-
-const API_ENDPOINTS = {
-  apt: "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev",
-  rhous: "https://apis.data.go.kr/1613000/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade",
-  shous: "https://apis.data.go.kr/1613000/RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade",
-  office: "https://apis.data.go.kr/1613000/RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade",
-  comm: "https://apis.data.go.kr/1613000/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade",
-  fact: "https://apis.data.go.kr/1613000/RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade",
-  land: "https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade",
-  right: "https://apis.data.go.kr/1613000/RTMSDataSvcSilvTrade/getRTMSDataSvcSilvTrade",
-} as const
-
-type PropertyType = keyof typeof API_ENDPOINTS
+import { fetchAllMolitPages, type MolitPageSnapshot } from "./molit-pagination"
+import { handleAdminDataStatus, loadAdminDataStatus } from "./admin-data-status"
+import { handleHistoryRequest } from "./history-response"
+import { resolveTransactionRequest } from "./rent-endpoints"
+import { readStoredTransactionFallback } from "./stored-transaction-response"
+import { persistTransactionCollection } from "./transaction-ingestion"
+import type { TransactionMode } from "./rent-endpoints"
+import { transformTransactionResponse } from "./transaction-response"
+import type { PropertyType } from "./transaction-query"
+import type { SnapshotDatabase } from "./transaction-store"
+import type { AdminStatusLoader } from "./admin-data-status"
 type RateLimiter = Pick<RateLimit, "limit">
 type CacheStore = Pick<Cache, "match" | "put">
 type WaitUntil = ExecutionContext["waitUntil"]
+
+export type ApiDependencies = {
+  readonly serviceKey: string
+  readonly fetchUpstream: typeof fetch
+  readonly rateLimiter?: RateLimiter
+  readonly cache?: CacheStore
+  readonly waitUntil?: WaitUntil
+  readonly database?: SnapshotDatabase
+  readonly now?: () => string
+  readonly adminToken?: string
+  readonly adminStatusLoader?: AdminStatusLoader
+  readonly adminDatabase?: D1Database
+}
+
+type WorkerBindings = {
+  readonly serviceKey: string
+  readonly fetchAsset: AssetFetcher
+  readonly adminToken?: string
+}
 
 function jsonError(message: string, status: number, headers?: HeadersInit): Response {
   return Response.json(
@@ -27,20 +43,6 @@ function jsonError(message: string, status: number, headers?: HeadersInit): Resp
       },
     },
   )
-}
-
-function isPropertyType(value: string | null): value is PropertyType {
-  return value !== null && Object.hasOwn(API_ENDPOINTS, value)
-}
-
-function isValidMonth(value: string | null): value is string {
-  if (value === null || !/^\d{6}$/.test(value)) return false
-  const month = Number(value.slice(4, 6))
-  return month >= 1 && month <= 12
-}
-
-function isFiveDigitCode(value: string | null): value is string {
-  return value !== null && /^\d{5}$/.test(value)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,24 +83,19 @@ async function readCachedResponse(cache: CacheStore, cacheKey: Request): Promise
 
 export async function handleApiRequest(
   request: Request,
-  serviceKey: string,
-  fetchUpstream: typeof fetch = fetch,
-  rateLimiter?: RateLimiter,
-  cache?: CacheStore,
-  waitUntil?: WaitUntil,
+  dependencies: ApiDependencies,
+  mode: TransactionMode = "trade",
 ): Promise<Response> {
+  const { serviceKey, fetchUpstream, rateLimiter, cache, waitUntil, database } = dependencies
   if (request.method !== "GET") {
     return jsonError("허용되지 않은 요청 방식입니다.", 405, { Allow: "GET" })
   }
 
-  const requestUrl = new URL(request.url)
-  const propertyType = requestUrl.searchParams.get("type")
-  const lawdCd = requestUrl.searchParams.get("lawdCd")
-  const dealYmd = requestUrl.searchParams.get("dealYmd")
-
-  if (!isPropertyType(propertyType) || !isFiveDigitCode(lawdCd) || !isValidMonth(dealYmd)) {
+  const resolvedRequest = resolveTransactionRequest(mode, new URL(request.url))
+  if (!resolvedRequest) {
     return jsonError("요청 값을 확인해 주세요.", 400)
   }
+  const { propertyType, lawdCd, dealYmd, endpoint, snapshotPropertyType } = resolvedRequest
 
   if (rateLimiter) {
     try {
@@ -120,23 +117,67 @@ export async function handleApiRequest(
     if (cachedResponse) return cachedResponse
   }
 
-  const upstreamUrl = new URL(API_ENDPOINTS[propertyType])
+  const upstreamUrl = new URL(endpoint)
   upstreamUrl.searchParams.set("serviceKey", serviceKey)
   upstreamUrl.searchParams.set("LAWD_CD", lawdCd)
   upstreamUrl.searchParams.set("DEAL_YMD", dealYmd)
   upstreamUrl.searchParams.set("_type", "json")
 
   try {
-    const upstreamResponse = await fetchAllMolitPages(upstreamUrl, fetchUpstream)
+    const startedAt = dependencies.now?.() ?? new Date().toISOString()
+    const pages: MolitPageSnapshot[] = []
+    const upstreamResponse = await fetchAllMolitPages(upstreamUrl, fetchUpstream, (page) => {
+      pages.push(page)
+    })
     if (!upstreamResponse.ok) {
+      const storedResponse = database
+        ? await readStoredTransactionFallback(database, {
+            propertyType: snapshotPropertyType,
+            lawdCd,
+            dealYmd,
+          })
+        : undefined
+      if (storedResponse) return transformTransactionResponse(resolvedRequest, storedResponse)
       return jsonError("국토부 API 요청이 실패했습니다.", upstreamResponse.status)
     }
+    const hasSuccessfulPayload = await isCacheableMolitResponse(upstreamResponse)
+    if (!hasSuccessfulPayload && database) {
+      const storedResponse = await readStoredTransactionFallback(database, {
+        propertyType: snapshotPropertyType,
+        lawdCd,
+        dealYmd,
+      })
+      if (storedResponse) return transformTransactionResponse(resolvedRequest, storedResponse)
+    }
+    const fetchedAt = dependencies.now?.() ?? new Date().toISOString()
+    if (database && pages.length > 0 && hasSuccessfulPayload) {
+      const databaseWrite = persistTransactionCollection(
+        database,
+        { propertyType: snapshotPropertyType, lawdCd, dealYmd },
+        pages,
+        startedAt,
+        fetchedAt,
+      )
+        .catch((error: unknown) => {
+          console.error("D1 transaction page persistence failed", error)
+        })
+      if (waitUntil) {
+        waitUntil(databaseWrite)
+      } else {
+        await databaseWrite
+      }
+    }
+    if (!hasSuccessfulPayload) return upstreamResponse
+    const transformedResponse = await transformTransactionResponse(resolvedRequest, upstreamResponse)
+    const response = new Response(transformedResponse.body, transformedResponse)
+    response.headers.set("X-Data-Source", "molit")
+    response.headers.set("X-Data-Status", "complete")
+    response.headers.set("X-Data-Fetched-At", fetchedAt)
     if (
       cache &&
-      !upstreamResponse.headers.has("Set-Cookie") &&
-      (await isCacheableMolitResponse(upstreamResponse))
+      !response.headers.has("Set-Cookie")
     ) {
-      const cacheResponse = new Response(upstreamResponse.clone().body, upstreamResponse)
+      const cacheResponse = new Response(response.clone().body, response)
       cacheResponse.headers.set("Cache-Control", "s-maxage=300")
       const cacheWrite = cache.put(cacheKey, cacheResponse).catch(() => undefined)
       if (waitUntil) {
@@ -145,8 +186,16 @@ export async function handleApiRequest(
         await cacheWrite
       }
     }
-    return upstreamResponse
-  } catch {
+    return response
+  } catch (error: unknown) {
+    if (error instanceof TypeError && database) {
+      const storedResponse = await readStoredTransactionFallback(database, {
+        propertyType: snapshotPropertyType,
+        lawdCd,
+        dealYmd,
+      })
+      if (storedResponse) return transformTransactionResponse(resolvedRequest, storedResponse)
+    }
     return jsonError("국토부 API에 연결하지 못했습니다.", 502)
   }
 }
@@ -155,56 +204,68 @@ type AssetFetcher = (request: Request) => Promise<Response>
 
 export async function routeRequest(
   request: Request,
-  serviceKey: string,
+  dependencies: ApiDependencies,
   fetchAsset: AssetFetcher,
-  fetchUpstream: typeof fetch = fetch,
-  rateLimiter?: RateLimiter,
-  cache?: CacheStore,
-  waitUntil?: WaitUntil,
 ): Promise<Response> {
   const url = new URL(request.url)
+  if (url.pathname === "/api/admin/data-status") {
+    const adminDatabase = dependencies.adminDatabase
+    const loadStatus = dependencies.adminStatusLoader ?? (adminDatabase
+      ? (query) => loadAdminDataStatus(adminDatabase, query)
+      : undefined)
+    return handleAdminDataStatus(request, {
+      expectedToken: dependencies.adminToken,
+      loadStatus,
+    })
+  }
+  if (url.pathname === "/api/real-estate/history") {
+    return handleHistoryRequest(request, dependencies.database)
+  }
+  if (url.pathname === "/api/real-estate/rent") {
+    return handleApiRequest(request, dependencies, "rent")
+  }
   if (url.pathname === "/api/real-estate") {
-    return handleApiRequest(request, serviceKey, fetchUpstream, rateLimiter, cache, waitUntil)
+    return handleApiRequest(request, dependencies)
   }
   return fetchAsset(request)
 }
 
-export function createWorkerHandler(
-  fetchUpstream: typeof fetch = fetch,
-  rateLimiter?: RateLimiter,
-  cache?: CacheStore,
-  waitUntil?: WaitUntil,
-) {
+type RequestDependencies = Omit<ApiDependencies, "serviceKey">
+
+export function createWorkerHandler(defaultDependencies: RequestDependencies = { fetchUpstream: fetch }) {
   return (
     request: Request,
-    serviceKey: string,
-    fetchAsset: AssetFetcher,
-    requestRateLimiter = rateLimiter,
-    requestCache = cache,
-    requestWaitUntil = waitUntil,
+    bindings: WorkerBindings,
+    requestDependencies: RequestDependencies = defaultDependencies,
   ) =>
     routeRequest(
       request,
-      serviceKey,
-      fetchAsset,
-      fetchUpstream,
-      requestRateLimiter,
-      requestCache,
-      requestWaitUntil,
+      { serviceKey: bindings.serviceKey, adminToken: bindings.adminToken, ...requestDependencies },
+      bindings.fetchAsset,
     )
 }
 
-const workerHandler = createWorkerHandler(fetch)
+const workerHandler = createWorkerHandler({ fetchUpstream: fetch })
+
+type WorkerEnv = Env & { readonly ADMIN_API_TOKEN?: string }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     return workerHandler(
       request,
-      env.DATA_GO_KR_SERVICE_KEY,
-      (assetRequest) => env.ASSETS.fetch(assetRequest),
-      env.API_RATE_LIMITER,
-      caches.default,
-      ctx.waitUntil.bind(ctx),
+      {
+        serviceKey: env.DATA_GO_KR_SERVICE_KEY,
+        adminToken: env.ADMIN_API_TOKEN,
+        fetchAsset: (assetRequest) => env.ASSETS.fetch(assetRequest),
+      },
+      {
+        fetchUpstream: fetch,
+        rateLimiter: env.API_RATE_LIMITER,
+        cache: caches.default,
+        waitUntil: ctx.waitUntil.bind(ctx),
+        database: env.DB,
+        adminDatabase: env.DB,
+      },
     )
   },
-} satisfies ExportedHandler<Env>
+} satisfies ExportedHandler<WorkerEnv>

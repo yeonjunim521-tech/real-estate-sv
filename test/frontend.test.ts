@@ -68,6 +68,24 @@ describe("Cloudflare frontend", () => {
     expect(html).not.toContain('최근 업데이트 <b id="update-time">')
   })
 
+  it("provides an accessible three-target comparison surface", async () => {
+    const [html, script, comparison, style] = await Promise.all([
+      readFile(resolve("site/index.html"), "utf8"),
+      readFile(resolve("site/main.js"), "utf8"),
+      readFile(resolve("site/comparison.js"), "utf8"),
+      readFile(resolve("site/style.css"), "utf8"),
+    ])
+
+    for (const id of ["comparison-section", "add-comparison-btn", "comparison-status", "comparison-table-body"]) {
+      expect(html).toContain(`id="${id}"`)
+    }
+    expect(script).toContain("initComparison")
+    expect(comparison).toContain("addCurrentComparison")
+    expect(comparison).toContain("renderComparison")
+    expect(style).toContain(".comparison-table-shell")
+    expect(style).toMatch(/@media \(max-width: 720px\)[\s\S]*\.comparison-table-shell/)
+  })
+
   it("preserves the detail action when inline price analysis is toggled", async () => {
     const script = await readFile(resolve("site/main.js"), "utf8")
     const analyzeFunction = script.match(/function runInlineAnalysis[\s\S]*?\n}/)?.[0] ?? ""

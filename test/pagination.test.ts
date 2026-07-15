@@ -30,7 +30,7 @@ describe("MOLIT pagination", () => {
       })
     })
 
-    const response = await handleApiRequest(apiRequest(), secret, fetchUpstream)
+    const response = await handleApiRequest(apiRequest(), { serviceKey: secret, fetchUpstream })
 
     expect(response.status).toBe(200)
     expect(fetchUpstream).toHaveBeenCalledTimes(3)
@@ -68,7 +68,7 @@ describe("MOLIT pagination", () => {
       })
     })
 
-    const response = await handleApiRequest(apiRequest(), secret, fetchUpstream)
+    const response = await handleApiRequest(apiRequest(), { serviceKey: secret, fetchUpstream })
 
     expect(response.status).toBe(503)
     expect(await response.json()).toEqual({ error: "국토부 API 요청이 실패했습니다." })
@@ -96,11 +96,12 @@ describe("MOLIT pagination", () => {
       })
     })
 
-    const response = await handleApiRequest(apiRequest(), secret, fetchUpstream)
-    const body = await response.json() as { response: { body: { items: { item: unknown[] } } } }
+    const response = await handleApiRequest(apiRequest(), { serviceKey: secret, fetchUpstream })
 
     expect(response.status).toBe(200)
-    expect(body.response.body.items.item).toEqual([{ id: 1 }, { id: 2 }])
+    await expect(response.json()).resolves.toMatchObject({
+      response: { body: { items: { item: [{ id: 1 }, { id: 2 }] } } },
+    })
     expect(fetchUpstream).toHaveBeenCalledTimes(3)
   })
 
@@ -123,7 +124,7 @@ describe("MOLIT pagination", () => {
       })
     })
 
-    const response = await handleApiRequest(apiRequest(), secret, fetchUpstream)
+    const response = await handleApiRequest(apiRequest(), { serviceKey: secret, fetchUpstream })
 
     expect(await response.json()).toEqual({
       response: {

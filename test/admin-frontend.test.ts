@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 describe("관리자 데이터 상태 화면", () => {
   it("인증 입력과 데이터 품질 상태 영역을 제공한다", async () => {
     const [html, script, style] = await Promise.all([
-      readFile(resolve("site/admin.html"), "utf8"),
+      readFile(resolve("site/admin/index.html"), "utf8"),
       readFile(resolve("site/admin.js"), "utf8"),
       readFile(resolve("site/admin.css"), "utf8"),
     ])

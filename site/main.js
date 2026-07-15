@@ -1,4 +1,5 @@
 import { calculateMedian } from './statistics.js';
+import { isAnalysisReady } from './query-readiness.js';
 import { resolveTransactionLocation } from './transaction-location.js';
 import { resolveTransactionStatus } from './transaction-status.js';
 
@@ -210,6 +211,11 @@ let sortMode = 'date-desc';
 const columnVisibility = { property: true, price: true, date: true, analysis: true };
 let lastQueryHadError = false;
 let lastQueryHadPartialError = false;
+let preparedData = [];
+let preparedQueryKey = '';
+let preparedHadPartialError = false;
+let dongRequestId = 0;
+let isPreparingDongs = false;
 
 const paginationContainer = document.getElementById('pagination-container');
 const pageSizeSelect = document.getElementById('page-size');
@@ -242,11 +248,37 @@ function setQueryStatus(message, state = '') {
     else delete queryStatus.dataset.state;
 }
 
+function getSelectedTypes() {
+    return Array.from(document.querySelectorAll('input[name="type"]:checked')).map(input => input.value);
+}
+
+function getQuerySelection() {
+    return {
+        sidoCd: sidoSelect.value,
+        lawdCd: gugunSelect.value,
+        dealYmd: dateSelect.value,
+        selectedTypes: getSelectedTypes(),
+        dong: dongSelect.value
+    };
+}
+
+function getQueryKey(query = getQuerySelection()) {
+    return [query.lawdCd, query.dealYmd, ...query.selectedTypes.sort()].join('|');
+}
+
+function syncFetchButton() {
+    const query = getQuerySelection();
+    fetchBtn.disabled = isPreparingDongs
+        || preparedQueryKey !== getQueryKey(query)
+        || !isAnalysisReady(query);
+}
+
 function setFetchButton(isLoading) {
-    fetchBtn.disabled = isLoading;
     fetchBtn.innerHTML = isLoading
         ? '<span class="button-spinner" aria-hidden="true"></span><span>데이터 불러오는 중</span>'
         : '<span class="button-icon">↗</span><span>분석 시작</span>';
+    if (isLoading) fetchBtn.disabled = true;
+    else syncFetchButton();
 }
 
 function initTheme() {
@@ -355,11 +387,23 @@ function markQueryDirty() {
     if (globalData.length) setQueryStatus('조회 조건이 바뀌었습니다. 다시 분석해 주세요.');
 }
 
+function resetDongOptions(message = '읍/면/동 선택') {
+    dongSelect.innerHTML = `<option value="">${message}</option>`;
+    dongSelect.disabled = true;
+    preparedData = [];
+    preparedQueryKey = '';
+    preparedHadPartialError = false;
+    isPreparingDongs = false;
+    dongRequestId += 1;
+    syncFetchButton();
+}
+
 sidoSelect.addEventListener('change', () => {
     const sidoCode = sidoSelect.value;
     gugunSelect.innerHTML = '<option value="">시/군/구 선택</option>';
-    dongSelect.innerHTML = '<option value="">조회 후 선택</option>';
-    dongSelect.disabled = true;
+    gugunSelect.disabled = !sidoCode;
+    dateSelect.disabled = true;
+    resetDongOptions('시/군/구 선택 후 조회');
     if (sidoCode && REGION_DATA[sidoCode]) {
         REGION_DATA[sidoCode].guguns.forEach(g => {
             const opt = document.createElement('option');
@@ -371,9 +415,24 @@ sidoSelect.addEventListener('change', () => {
     markQueryDirty();
 });
 
-gugunSelect.addEventListener('change', markQueryDirty);
-dateSelect.addEventListener('change', markQueryDirty);
-document.querySelectorAll('input[name="type"]').forEach(checkbox => checkbox.addEventListener('change', markQueryDirty));
+gugunSelect.addEventListener('change', () => {
+    dateSelect.disabled = !gugunSelect.value;
+    resetDongOptions(gugunSelect.value ? '읍/면/동 불러오는 중' : '시/군/구 선택 후 조회');
+    markQueryDirty();
+    if (gugunSelect.value) prepareDongOptions();
+});
+
+dateSelect.addEventListener('change', () => {
+    resetDongOptions('읍/면/동 불러오는 중');
+    markQueryDirty();
+    prepareDongOptions();
+});
+
+document.querySelectorAll('input[name="type"]').forEach(checkbox => checkbox.addEventListener('change', () => {
+    resetDongOptions(gugunSelect.value ? '읍/면/동 불러오는 중' : '시/군/구 선택 후 조회');
+    markQueryDirty();
+    if (gugunSelect.value) prepareDongOptions();
+}));
 
 // ===================================================================
 // 6. [핵심] API 호출 로직 (영문 필드명 + Cloudflare Worker)
@@ -580,6 +639,55 @@ async function getMultiTypeData() {
         setQueryStatus('데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
         return null;
     }
+}
+
+async function prepareDongOptions() {
+    const query = getQuerySelection();
+    if (!query.sidoCd || !query.lawdCd || !query.dealYmd || query.selectedTypes.length === 0) {
+        const message = query.selectedTypes.length === 0
+            ? '부동산 유형 선택 후 조회'
+            : '시/군/구 선택 후 조회';
+        resetDongOptions(message);
+        return null;
+    }
+
+    const requestId = ++dongRequestId;
+    const queryKey = getQueryKey(query);
+    isPreparingDongs = true;
+    dongSelect.disabled = true;
+    dongSelect.innerHTML = '<option value="">읍/면/동 불러오는 중</option>';
+    syncFetchButton();
+    setQueryStatus('선택한 조건의 읍·면·동 목록을 불러오고 있습니다.');
+
+    const data = await getMultiTypeData();
+    if (requestId !== dongRequestId || queryKey !== getQueryKey()) return null;
+
+    isPreparingDongs = false;
+    if (data === null) {
+        resetDongOptions('읍/면/동 조회 실패');
+        return null;
+    }
+
+    const dongs = [...new Set(data.map(item => item.umdNm).filter(Boolean))].sort();
+    preparedData = data;
+    preparedQueryKey = queryKey;
+    preparedHadPartialError = lastQueryHadPartialError;
+    dongSelect.innerHTML = '<option value="">읍/면/동 선택</option>';
+    dongs.forEach(dong => {
+        const option = document.createElement('option');
+        option.value = dong;
+        option.innerText = dong;
+        dongSelect.appendChild(option);
+    });
+    dongSelect.disabled = dongs.length === 0;
+    syncFetchButton();
+
+    if (dongs.length) {
+        setQueryStatus('읍·면·동을 선택한 뒤 분석을 시작해 주세요.', preparedHadPartialError ? 'warning' : '');
+    } else {
+        setQueryStatus('선택한 조건에 조회 가능한 읍·면·동이 없습니다. 다른 기준 월이나 유형을 선택해 보세요.');
+    }
+    return data;
 }
 
 // ===================================================================
@@ -833,28 +941,20 @@ nextPageBtn.addEventListener('click', () => {
 });
 
 dongSelect.addEventListener('change', () => {
-    const selectedDong = dongSelect.value;
-    if (selectedDong) {
-        filteredData = sortTransactions(globalData.filter(item => item.umdNm === selectedDong));
-    } else {
-        filteredData = sortTransactions(globalData);
-    }
-    currentPage = 1;
-    renderTable();
-    renderMetrics(filteredData);
-    renderTrend(filteredData);
+    markQueryDirty();
+    syncFetchButton();
 });
 
 // ===================================================================
 // 9. 최근 분석 리포트 (LocalStorage)
 // ===================================================================
-function saveHistory(data, lawdCd, dealYmd, selectedTypes) {
+function saveHistory(data, lawdCd, dealYmd, selectedTypes, dong) {
     if (!data || data.length === 0) return;
 
     // 시도/구군 이름 찾기
     const sidoName = sidoSelect.options[sidoSelect.selectedIndex].text;
     const gugunName = gugunSelect.options[gugunSelect.selectedIndex].text;
-    const locationName = `${sidoName} ${gugunName}`;
+    const locationName = `${sidoName} ${gugunName} ${dong}`;
 
     const typesText = selectedTypes.map(t => TYPE_NAMES[t]).join(', ');
 
@@ -866,6 +966,7 @@ function saveHistory(data, lawdCd, dealYmd, selectedTypes) {
         lawdCd: lawdCd,
         sidoCd: sidoSelect.value,
         dealYmd: dealYmd,
+        dong: dong,
         selectedTypes: selectedTypes,
         timestamp: new Date().getTime()
     };
@@ -906,7 +1007,7 @@ function renderHistory() {
     historyList.innerHTML = history.map(item => {
         const selectedTypes = Array.isArray(item.selectedTypes) ? item.selectedTypes.join(',') : '';
         return `
-        <button class="history-card" type="button" data-sido="${escapeHtml(item.sidoCd)}" data-lawd="${escapeHtml(item.lawdCd)}" data-month="${escapeHtml(item.dealYmd)}" data-types="${escapeHtml(selectedTypes)}">
+        <button class="history-card" type="button" data-sido="${escapeHtml(item.sidoCd)}" data-lawd="${escapeHtml(item.lawdCd)}" data-month="${escapeHtml(item.dealYmd)}" data-dong="${escapeHtml(item.dong || '')}" data-types="${escapeHtml(selectedTypes)}">
             <h4>${escapeHtml(item.title)}</h4>
             <p>${escapeHtml(item.desc)}</p>
             <span class="count-badge">${escapeHtml(item.count)}건</span>
@@ -918,24 +1019,29 @@ function renderHistory() {
 historyList.addEventListener('click', event => {
     const card = event.target.closest('.history-card');
     if (!card) return;
-    window.loadHistoryItem(card.dataset.sido, card.dataset.lawd, card.dataset.month, card.dataset.types || '');
+    window.loadHistoryItem(card.dataset.sido, card.dataset.lawd, card.dataset.month, card.dataset.dong || '', card.dataset.types || '');
 });
 
-window.loadHistoryItem = function (sidoCd, lawdCd, dealYmd, typesStr) {
+window.loadHistoryItem = async function (sidoCd, lawdCd, dealYmd, dong, typesStr) {
     sidoSelect.value = String(sidoCd);
     sidoSelect.dispatchEvent(new Event('change'));
+    gugunSelect.value = lawdCd;
+    dateSelect.disabled = false;
+    dateSelect.value = dealYmd;
 
-    setTimeout(() => {
-        gugunSelect.value = lawdCd;
-        dateSelect.value = dealYmd;
+    const types = String(typesStr || '').split(',');
+    document.querySelectorAll('input[name="type"]').forEach(cb => {
+        cb.checked = types.includes(cb.value);
+    });
 
-        const types = String(typesStr || '').split(',');
-        document.querySelectorAll('input[name="type"]').forEach(cb => {
-            cb.checked = types.includes(cb.value);
-        });
-
+    await prepareDongOptions();
+    if (dong && [...dongSelect.options].some(option => option.value === dong)) {
+        dongSelect.value = dong;
+        syncFetchButton();
         fetchBtn.click();
-    }, 100);
+    } else {
+        setQueryStatus('읍·면·동을 선택한 뒤 분석을 시작해 주세요.');
+    }
 };
 
 clearHistoryBtn.addEventListener('click', () => {
@@ -947,72 +1053,47 @@ clearHistoryBtn.addEventListener('click', () => {
 // 10. 조회 버튼 이벤트 (멀티 필터 결과 렌더링)
 // ===================================================================
 fetchBtn.addEventListener('click', async () => {
+    const query = getQuerySelection();
+    if (!isAnalysisReady(query)) {
+        setQueryStatus('시·도, 시·군·구, 기준 월, 읍·면·동을 순서대로 선택해 주세요.', 'error');
+        syncFetchButton();
+        return;
+    }
+
     setFetchButton(true);
-    setQueryStatus('선택한 유형의 공식 데이터를 모으고 있습니다.');
+    setQueryStatus('선택한 읍·면·동의 거래를 분석하고 있습니다.');
     analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon loading-mark">◌</span><strong>데이터를 불러오는 중입니다.</strong><span>여러 유형을 선택하면 결과를 합쳐 정리합니다.</span></td></tr>`;
     paginationContainer.style.display = 'none';
 
-    let data = null;
-    try {
-        data = await getMultiTypeData();
-    } catch (error) {
-        console.error('조회 처리 실패:', error);
-        lastQueryHadError = true;
-        setQueryStatus('데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
-    }
+    const data = preparedQueryKey === getQueryKey(query) ? preparedData : null;
 
     if (data !== null) {
         globalData = data;
-        filteredData = sortTransactions(data);
+        filteredData = sortTransactions(data.filter(item => item.umdNm === query.dong));
         currentPage = 1;
 
-        // 행정동(umdNm) 고유 목록 추출 및 옵션 생성
-        const dongs = [...new Set(data.map(item => item.umdNm).filter(Boolean))].sort();
-        dongSelect.innerHTML = '<option value="">읍/면/동 전체 (필터 해제)</option>';
-        dongs.forEach(dong => {
-            const opt = document.createElement('option');
-            opt.value = dong;
-            opt.innerText = dong;
-            dongSelect.appendChild(opt);
-        });
-        dongSelect.disabled = dongs.length === 0;
-
         renderTable();
-        renderMetrics(data);
-        renderTrend(data);
+        renderMetrics(filteredData);
+        renderTrend(filteredData);
 
-        if (data.length > 0) {
+        if (filteredData.length > 0) {
             updateTime.innerText = new Date().toLocaleTimeString();
             setQueryStatus(
-                lastQueryHadPartialError
-                    ? `${data.length.toLocaleString()}건을 확인했습니다. 일부 유형은 연결에 실패했습니다.`
-                    : `${data.length.toLocaleString()}건을 확인했습니다.`,
-                lastQueryHadPartialError ? 'warning' : 'success'
+                preparedHadPartialError
+                    ? `${filteredData.length.toLocaleString()}건을 확인했습니다. 일부 유형은 연결에 실패했습니다.`
+                    : `${filteredData.length.toLocaleString()}건을 확인했습니다.`,
+                preparedHadPartialError ? 'warning' : 'success'
             );
 
-            // 히스토리 저장
-            const selectedTypes = Array.from(document.querySelectorAll('input[name="type"]:checked')).map(cb => cb.value);
-            saveHistory(data, gugunSelect.value, dateSelect.value, selectedTypes);
+            saveHistory(filteredData, query.lawdCd, query.dealYmd, query.selectedTypes, query.dong);
         } else {
-            setQueryStatus(
-                lastQueryHadPartialError
-                    ? '일부 유형의 데이터 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.'
-                    : '조건에 맞는 거래가 없습니다. 다른 기준 월이나 유형을 선택해 보세요.',
-                lastQueryHadPartialError ? 'warning' : ''
-            );
+            setQueryStatus('선택한 읍·면·동에 조건과 일치하는 거래가 없습니다. 다른 기준 월이나 유형을 선택해 보세요.');
         }
     } else {
-        const errorMessage = lastQueryHadError
-            ? '데이터 연결에 실패했습니다.'
-            : '조건을 확인해 주세요.';
-        const errorHint = lastQueryHadError
-            ? '잠시 후 다시 시도하거나 다른 기준 월을 선택해 주세요.'
-            : '지역과 유형을 선택한 뒤 다시 시도해 주세요.';
-        analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon">!</span><strong>${errorMessage}</strong><span>${errorHint}</span></td></tr>`;
+        analysisBody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="empty-icon">!</span><strong>조회 조건이 변경되었습니다.</strong><span>읍·면·동 목록을 다시 불러온 뒤 분석해 주세요.</span></td></tr>';
         globalData = [];
         filteredData = [];
-        dongSelect.innerHTML = '<option value="">읍/면/동 전체 (조회 후 활성화)</option>';
-        dongSelect.disabled = true;
+        setQueryStatus('읍·면·동 목록을 다시 불러온 뒤 분석해 주세요.', 'error');
         renderMetrics([]);
         renderTrend([]);
     }
@@ -1024,6 +1105,9 @@ fetchBtn.addEventListener('click', async () => {
 // 11. 초기화
 // ===================================================================
 initDateOptions();
+gugunSelect.disabled = true;
+dateSelect.disabled = true;
+resetDongOptions('시/군/구 선택 후 조회');
 initTheme();
 renderMetrics([]);
 renderTrend([]);

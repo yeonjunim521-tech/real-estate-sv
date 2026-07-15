@@ -28,6 +28,16 @@ describe("Cloudflare frontend", () => {
     expect(image.readUInt32BE(20)).toBe(630)
   })
 
+  it("declares a favicon asset instead of triggering the browser fallback request", async () => {
+    const [html, favicon] = await Promise.all([
+      readFile(resolve("site/index.html"), "utf8"),
+      readFile(resolve("site/favicon.svg"), "utf8"),
+    ])
+
+    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">')
+    expect(favicon).toContain("<svg")
+  })
+
   it("includes the analysis dashboard controls and inline status surfaces", async () => {
     const [html, script] = await Promise.all([
       readFile(resolve("site/index.html"), "utf8"),

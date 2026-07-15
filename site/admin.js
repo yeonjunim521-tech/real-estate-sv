@@ -119,7 +119,7 @@ async function loadStatus(event) {
   statusText.textContent = "데이터 상태를 조회하고 있습니다."
 
   try {
-    const params = new URLSearchParams({ propertyType: typeInput.value, lawdCd: lawdInput.value, dealYmd })
+    const params = new URLSearchParams({ type: typeInput.value, lawdCd: lawdInput.value, dealYmd })
     const response = await fetch(`/api/admin/data-status?${params}`, { headers: { Authorization: `Bearer ${token}` } })
     const data = await response.json()
     if (!response.ok) throw new Error(data.error ?? "데이터 상태를 불러오지 못했습니다.")

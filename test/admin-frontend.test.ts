@@ -28,6 +28,8 @@ describe("관리자 데이터 상태 화면", () => {
     expect(html).toContain("좌우로 밀어 전체 항목 보기")
     expect(html).toContain('tabindex="0"')
     expect(script).toContain("/api/admin/data-status")
+    expect(script).toContain("new URLSearchParams({ type: typeInput.value, lawdCd: lawdInput.value, dealYmd })")
+    expect(script).not.toContain("new URLSearchParams({ propertyType:")
     expect(script).toContain('Authorization: `Bearer ${token}`')
     expect(script).not.toContain("localStorage")
     expect(script).not.toContain("sessionStorage")

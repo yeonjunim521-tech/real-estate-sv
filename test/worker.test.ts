@@ -189,6 +189,28 @@ describe("handleApiRequest", () => {
 })
 
 describe("routeRequest", () => {
+  it("routes administrator status without exposing it to an unauthorized request", async () => {
+    const fetchAsset = vi.fn(async () => new Response("asset"))
+    const fetchUpstream = vi.fn()
+    const adminStatusLoader = vi.fn()
+
+    const response = await routeRequest(
+      new Request(
+        "https://example.com/api/admin/data-status?type=apt&lawdCd=11680&dealYmd=202606",
+      ),
+      dependencies(fetchUpstream, {
+        adminToken: "admin-secret",
+        adminStatusLoader,
+      }),
+      fetchAsset,
+    )
+
+    expect(response.status).toBe(401)
+    expect(adminStatusLoader).not.toHaveBeenCalled()
+    expect(fetchUpstream).not.toHaveBeenCalled()
+    expect(fetchAsset).not.toHaveBeenCalled()
+  })
+
   it("routes five-year history status without calling MOLIT or static assets", async () => {
     const fetchAsset = vi.fn(async () => new Response("asset"))
     const fetchUpstream = vi.fn()

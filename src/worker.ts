@@ -1,4 +1,5 @@
 import { fetchAllMolitPages, type MolitPageSnapshot } from "./molit-pagination"
+import { handleAdminDataStatus, loadAdminDataStatus } from "./admin-data-status"
 import { handleHistoryRequest } from "./history-response"
 import { resolveTransactionRequest } from "./rent-endpoints"
 import { readStoredTransactionFallback } from "./stored-transaction-response"
@@ -7,6 +8,7 @@ import type { TransactionMode } from "./rent-endpoints"
 import { transformTransactionResponse } from "./transaction-response"
 import type { PropertyType } from "./transaction-query"
 import type { SnapshotDatabase } from "./transaction-store"
+import type { AdminStatusLoader } from "./admin-data-status"
 type RateLimiter = Pick<RateLimit, "limit">
 type CacheStore = Pick<Cache, "match" | "put">
 type WaitUntil = ExecutionContext["waitUntil"]
@@ -19,11 +21,15 @@ export type ApiDependencies = {
   readonly waitUntil?: WaitUntil
   readonly database?: SnapshotDatabase
   readonly now?: () => string
+  readonly adminToken?: string
+  readonly adminStatusLoader?: AdminStatusLoader
+  readonly adminDatabase?: D1Database
 }
 
 type WorkerBindings = {
   readonly serviceKey: string
   readonly fetchAsset: AssetFetcher
+  readonly adminToken?: string
 }
 
 function jsonError(message: string, status: number, headers?: HeadersInit): Response {
@@ -202,6 +208,16 @@ export async function routeRequest(
   fetchAsset: AssetFetcher,
 ): Promise<Response> {
   const url = new URL(request.url)
+  if (url.pathname === "/api/admin/data-status") {
+    const adminDatabase = dependencies.adminDatabase
+    const loadStatus = dependencies.adminStatusLoader ?? (adminDatabase
+      ? (query) => loadAdminDataStatus(adminDatabase, query)
+      : undefined)
+    return handleAdminDataStatus(request, {
+      expectedToken: dependencies.adminToken,
+      loadStatus,
+    })
+  }
   if (url.pathname === "/api/real-estate/history") {
     return handleHistoryRequest(request, dependencies.database)
   }
@@ -224,12 +240,14 @@ export function createWorkerHandler(defaultDependencies: RequestDependencies = {
   ) =>
     routeRequest(
       request,
-      { serviceKey: bindings.serviceKey, ...requestDependencies },
+      { serviceKey: bindings.serviceKey, adminToken: bindings.adminToken, ...requestDependencies },
       bindings.fetchAsset,
     )
 }
 
 const workerHandler = createWorkerHandler({ fetchUpstream: fetch })
+
+type WorkerEnv = Env & { readonly ADMIN_API_TOKEN?: string }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
@@ -237,6 +255,7 @@ export default {
       request,
       {
         serviceKey: env.DATA_GO_KR_SERVICE_KEY,
+        adminToken: env.ADMIN_API_TOKEN,
         fetchAsset: (assetRequest) => env.ASSETS.fetch(assetRequest),
       },
       {
@@ -245,7 +264,8 @@ export default {
         cache: caches.default,
         waitUntil: ctx.waitUntil.bind(ctx),
         database: env.DB,
+        adminDatabase: env.DB,
       },
     )
   },
-} satisfies ExportedHandler<Env>
+} satisfies ExportedHandler<WorkerEnv>

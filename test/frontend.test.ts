@@ -59,6 +59,7 @@ describe("Cloudflare frontend", () => {
     expect(script).toContain("setQueryStatus")
     expect(script).toContain("prepareDongOptions")
     expect(script).toContain("isAnalysisReady")
+    expect(html).toContain('<input type="checkbox" name="type" value="apt" checked>')
     expect(html).toContain('<select id="gugun-select" disabled>')
     expect(html).toContain('<select id="date-select" disabled>')
     expect(html).toContain('<select id="dong-select" disabled>')

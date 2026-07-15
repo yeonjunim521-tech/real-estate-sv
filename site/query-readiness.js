@@ -1,3 +1,3 @@
-export function isAnalysisReady({ sidoCd, lawdCd, dealYmd, selectedTypes, dong }) {
-    return Boolean(sidoCd && lawdCd && dealYmd && selectedTypes.length && dong);
+export function isAnalysisReady({ sidoCd, lawdCd, dealYmd, selectedTypes }) {
+    return Boolean(sidoCd && lawdCd && dealYmd && selectedTypes.length);
 }

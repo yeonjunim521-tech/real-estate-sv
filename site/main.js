@@ -674,7 +674,7 @@ async function prepareDongOptions() {
     preparedData = data;
     preparedQueryKey = queryKey;
     preparedHadPartialError = lastQueryHadPartialError;
-    dongSelect.innerHTML = '<option value="">읍/면/동 선택</option>';
+    dongSelect.innerHTML = '<option value="">시/군/구 전체</option>';
     dongs.forEach(dong => {
         const option = document.createElement('option');
         option.value = dong;
@@ -685,7 +685,7 @@ async function prepareDongOptions() {
     syncFetchButton();
 
     if (dongs.length) {
-        setQueryStatus('읍·면·동을 선택한 뒤 분석을 시작해 주세요.', preparedHadPartialError ? 'warning' : '');
+        setQueryStatus('시·군·구 전체를 조회하거나 읍·면·동을 선택해 좁혀볼 수 있습니다.', preparedHadPartialError ? 'warning' : '');
     } else {
         setQueryStatus('선택한 조건에 조회 가능한 읍·면·동이 없습니다. 다른 기준 월이나 유형을 선택해 보세요.');
     }
@@ -956,7 +956,7 @@ function saveHistory(data, lawdCd, dealYmd, selectedTypes, dong) {
     // 시도/구군 이름 찾기
     const sidoName = sidoSelect.options[sidoSelect.selectedIndex].text;
     const gugunName = gugunSelect.options[gugunSelect.selectedIndex].text;
-    const locationName = `${sidoName} ${gugunName} ${dong}`;
+    const locationName = `${sidoName} ${gugunName} ${dong}`.trim();
 
     const typesText = selectedTypes.map(t => TYPE_NAMES[t]).join(', ');
 
@@ -1037,12 +1037,12 @@ window.loadHistoryItem = async function (sidoCd, lawdCd, dealYmd, dong, typesStr
     });
 
     await prepareDongOptions();
-    if (dong && [...dongSelect.options].some(option => option.value === dong)) {
+    if (!dong || [...dongSelect.options].some(option => option.value === dong)) {
         dongSelect.value = dong;
         syncFetchButton();
         fetchBtn.click();
     } else {
-        setQueryStatus('읍·면·동을 선택한 뒤 분석을 시작해 주세요.');
+        setQueryStatus('저장된 읍·면·동을 현재 조건에서 찾을 수 없습니다.', 'error');
     }
 };
 
@@ -1057,13 +1057,13 @@ clearHistoryBtn.addEventListener('click', () => {
 fetchBtn.addEventListener('click', async () => {
     const query = getQuerySelection();
     if (!isAnalysisReady(query)) {
-        setQueryStatus('시·도, 시·군·구, 기준 월, 읍·면·동을 순서대로 선택해 주세요.', 'error');
+        setQueryStatus('시·도, 시·군·구, 기준 월을 순서대로 선택해 주세요.', 'error');
         syncFetchButton();
         return;
     }
 
     setFetchButton(true);
-    setQueryStatus('선택한 읍·면·동의 거래를 분석하고 있습니다.');
+    setQueryStatus(query.dong ? '선택한 읍·면·동의 거래를 분석하고 있습니다.' : '선택한 시·군·구 전체 거래를 분석하고 있습니다.');
     analysisBody.innerHTML = `<tr><td colspan="4" class="empty-state"><span class="empty-icon loading-mark">◌</span><strong>데이터를 불러오는 중입니다.</strong><span>여러 유형을 선택하면 결과를 합쳐 정리합니다.</span></td></tr>`;
     paginationContainer.style.display = 'none';
 
@@ -1071,7 +1071,7 @@ fetchBtn.addEventListener('click', async () => {
 
     if (data !== null) {
         globalData = data;
-        filteredData = sortTransactions(data.filter(item => item.umdNm === query.dong));
+        filteredData = sortTransactions(query.dong ? data.filter(item => item.umdNm === query.dong) : data);
         currentPage = 1;
 
         renderTable();
@@ -1091,7 +1091,7 @@ fetchBtn.addEventListener('click', async () => {
             saveHistory(filteredData, query.lawdCd, query.dealYmd, query.selectedTypes, query.dong);
         } else {
             comparisonController.setCurrentAvailable(false);
-            setQueryStatus('선택한 읍·면·동에 조건과 일치하는 거래가 없습니다. 다른 기준 월이나 유형을 선택해 보세요.');
+            setQueryStatus(query.dong ? '선택한 읍·면·동에 조건과 일치하는 거래가 없습니다.' : '선택한 시·군·구에 조건과 일치하는 거래가 없습니다.');
         }
     } else {
         analysisBody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="empty-icon">!</span><strong>조회 조건이 변경되었습니다.</strong><span>읍·면·동 목록을 다시 불러온 뒤 분석해 주세요.</span></td></tr>';

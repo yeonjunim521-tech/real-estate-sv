@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { isAnalysisReady } from "../site/query-readiness.js"
 
 describe("analysis query readiness", () => {
-  it("requires an 읍면동 selection before analysis can start", () => {
+  it("allows district-wide analysis without an 읍면동 selection", () => {
     const query = {
       sidoCd: "11",
       lawdCd: "11230",
@@ -10,7 +10,7 @@ describe("analysis query readiness", () => {
       selectedTypes: ["apt"],
     }
 
-    expect(isAnalysisReady({ ...query, dong: "" })).toBe(false)
+    expect(isAnalysisReady({ ...query, dong: "" })).toBe(true)
     expect(isAnalysisReady({ ...query, dong: "장안동" })).toBe(true)
   })
 })

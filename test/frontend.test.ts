@@ -63,6 +63,7 @@ describe("Cloudflare frontend", () => {
     expect(html).toContain('<select id="gugun-select" disabled>')
     expect(html).toContain('<select id="date-select" disabled>')
     expect(html).toContain('<select id="dong-select" disabled>')
+    expect(html).toContain('읍·면·동 <small>선택</small>')
     expect(html).toContain('id="fetch-live-btn" class="primary-button" type="button" disabled')
     expect(html).toContain('최근 조회 <b id="update-time">')
     expect(html).not.toContain('최근 업데이트 <b id="update-time">')

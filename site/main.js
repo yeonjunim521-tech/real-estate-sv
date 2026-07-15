@@ -1,4 +1,5 @@
 import { calculateMedian } from './statistics.js';
+import { initComparison } from './comparison.js';
 import { isAnalysisReady } from './query-readiness.js';
 import { resolveTransactionLocation } from './transaction-location.js';
 import { resolveTransactionStatus } from './transaction-status.js';
@@ -385,6 +386,7 @@ function initDateOptions() {
 // ===================================================================
 function markQueryDirty() {
     if (globalData.length) setQueryStatus('조회 조건이 바뀌었습니다. 다시 분석해 주세요.');
+    comparisonController.setCurrentAvailable(false);
 }
 
 function resetDongOptions(message = '읍/면/동 선택') {
@@ -1077,6 +1079,7 @@ fetchBtn.addEventListener('click', async () => {
         renderTrend(filteredData);
 
         if (filteredData.length > 0) {
+            comparisonController.setCurrentAvailable(true);
             updateTime.innerText = new Date().toLocaleTimeString();
             setQueryStatus(
                 preparedHadPartialError
@@ -1087,18 +1090,35 @@ fetchBtn.addEventListener('click', async () => {
 
             saveHistory(filteredData, query.lawdCd, query.dealYmd, query.selectedTypes, query.dong);
         } else {
+            comparisonController.setCurrentAvailable(false);
             setQueryStatus('선택한 읍·면·동에 조건과 일치하는 거래가 없습니다. 다른 기준 월이나 유형을 선택해 보세요.');
         }
     } else {
         analysisBody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="empty-icon">!</span><strong>조회 조건이 변경되었습니다.</strong><span>읍·면·동 목록을 다시 불러온 뒤 분석해 주세요.</span></td></tr>';
         globalData = [];
         filteredData = [];
+        comparisonController.setCurrentAvailable(false);
         setQueryStatus('읍·면·동 목록을 다시 불러온 뒤 분석해 주세요.', 'error');
         renderMetrics([]);
         renderTrend([]);
     }
 
     setFetchButton(false);
+});
+
+const comparisonController = initComparison(() => {
+    if (!filteredData.length) return null;
+    const query = getQuerySelection();
+    const sidoName = sidoSelect.options[sidoSelect.selectedIndex]?.text || '';
+    const gugunName = gugunSelect.options[gugunSelect.selectedIndex]?.text || '';
+    return {
+        id: [query.lawdCd, query.dealYmd, query.dong, ...query.selectedTypes.sort()].join('|'),
+        label: `${sidoName} ${gugunName} ${query.dong}`.trim(),
+        period: query.dealYmd,
+        periodLabel: dateSelect.options[dateSelect.selectedIndex]?.text || query.dealYmd,
+        types: query.selectedTypes.map(type => TYPE_NAMES[type]).filter(Boolean).join(', '),
+        data: filteredData
+    };
 });
 
 // ===================================================================

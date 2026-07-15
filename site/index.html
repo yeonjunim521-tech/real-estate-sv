@@ -34,7 +34,7 @@
             <nav class="top-nav" aria-label="주요 메뉴">
                 <button class="nav-item is-active" type="button">통합 분석</button>
                 <button class="nav-item" type="button" disabled>빅데이터 지도 <span>준비 중</span></button>
-                <button class="nav-item" type="button" disabled>비교 분석 <span>준비 중</span></button>
+                <button id="comparison-nav" class="nav-item" type="button">비교 분석</button>
             </nav>
             <div class="header-actions">
                 <button id="theme-toggle" class="icon-button" type="button" aria-label="다크모드로 전환">◐<span>테마</span></button>
@@ -132,9 +132,23 @@
                 </article>
             </section>
 
+            <section id="comparison-section" class="comparison-section" aria-labelledby="comparison-title">
+                <div class="section-heading">
+                    <div><p class="eyebrow">03 / COMPARE</p><h2 id="comparison-title">대상 비교</h2><p class="results-summary">같은 기준 월의 지역을 최대 3개까지 나란히 비교합니다.</p></div>
+                    <button id="add-comparison-btn" class="primary-button comparison-add" type="button" disabled>현재 결과 비교에 추가</button>
+                </div>
+                <p id="comparison-status" class="query-status" role="status">먼저 지역 분석을 완료해 주세요.</p>
+                <div class="comparison-table-shell" tabindex="0" aria-label="비교 결과 가로 스크롤 영역">
+                    <table class="comparison-table" aria-describedby="comparison-status">
+                        <thead><tr><th>대상</th><th>기준 월</th><th>거래량</th><th>중앙 거래가</th><th>평당가</th><th>전월세 지표</th><th>기본 공법</th><th><span class="sr-only">관리</span></th></tr></thead>
+                        <tbody id="comparison-table-body"><tr><td colspan="8" class="comparison-empty">비교할 분석 결과를 추가해 주세요.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
             <section class="results-section" aria-labelledby="results-title">
                 <div class="section-heading result-heading">
-                    <div><p class="eyebrow">03 / TRANSACTIONS</p><h2 id="results-title">실거래 목록</h2><p id="results-summary" class="results-summary">조회 조건을 선택하면 거래가 표시됩니다.</p></div>
+                    <div><p class="eyebrow">04 / TRANSACTIONS</p><h2 id="results-title">실거래 목록</h2><p id="results-summary" class="results-summary">조회 조건을 선택하면 거래가 표시됩니다.</p></div>
                     <div class="result-tools"><span id="result-count" class="result-count">0건</span><button id="export-csv-btn" class="text-button" type="button" disabled>CSV 저장</button><div class="columns-control"><button id="columns-toggle" class="text-button" type="button" aria-expanded="false" aria-controls="columns-menu">열 설정</button><div id="columns-menu" class="columns-menu" hidden><label><input type="checkbox" data-column-toggle="property" checked>매물 정보</label><label><input type="checkbox" data-column-toggle="price" checked>거래 금액</label><label><input type="checkbox" data-column-toggle="date" checked>계약일</label><label><input type="checkbox" data-column-toggle="analysis" checked>면적·평당가</label></div></div><label class="compact-control" for="sort-select">정렬<select id="sort-select"><option value="date-desc">최신 계약일</option><option value="price-desc">거래 금액 높은순</option><option value="price-asc">거래 금액 낮은순</option><option value="size-desc">면적 큰순</option></select></label></div>
                 </div>
                 <div class="table-shell">
@@ -158,7 +172,7 @@
             </aside>
 
             <section class="history-section" aria-labelledby="history-title">
-                <div class="section-heading compact"><div><p class="eyebrow">04 / SAVED</p><h2 id="history-title">최근 분석</h2></div><button id="clear-history-btn" class="text-button danger" type="button">기록 삭제</button></div>
+                <div class="section-heading compact"><div><p class="eyebrow">05 / SAVED</p><h2 id="history-title">최근 분석</h2></div><button id="clear-history-btn" class="text-button danger" type="button">기록 삭제</button></div>
                 <div id="history-list" class="history-grid"><p class="history-empty">저장된 분석이 없습니다.</p></div>
             </section>
         </main>

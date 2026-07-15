@@ -141,6 +141,8 @@
 
 ## Task 6. 3개 대상 비교 분석
 
+**상태: 로컬 구현·검증 완료**
+
 **예상 파일**
 
 - 생성: `src/comparison.ts`
@@ -162,11 +164,14 @@
 
 ## Task 7. 관리자 데이터 품질·성능 화면
 
+**상태: 로컬 구현·검증 완료**
+
 **예상 파일**
 
 - 생성: `src/admin-data-status.ts`
 - 생성: `test/admin-data-status.test.ts`
-- 관리자 화면 파일은 기존 인증 구조 확인 후 확정
+- 생성: `site/admin.html`, `site/admin.js`, `site/admin.css`
+- 생성: `test/admin-frontend.test.ts`
 
 **구현**
 

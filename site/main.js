@@ -1,3 +1,7 @@
+import { calculateMedian } from './statistics.js';
+import { resolveTransactionLocation } from './transaction-location.js';
+import { resolveTransactionStatus } from './transaction-status.js';
+
 /**
  * 부동산 분석 플랫폼 PRO v14 (근본 원인 수정 완료)
  *
@@ -275,8 +279,8 @@ function renderMetrics(data) {
     const total = data.length;
     const cancelled = data.filter(item => item.cancelled);
     const valid = data.filter(item => !item.cancelled);
-    const prices = valid.map(item => item.price).filter(price => Number.isFinite(price) && price > 0).sort((a, b) => a - b);
-    const median = prices.length ? prices[Math.floor((prices.length - 1) / 2)] : 0;
+    const prices = valid.map(item => item.price).filter(price => Number.isFinite(price) && price > 0);
+    const median = calculateMedian(prices);
     const average = prices.length ? prices.reduce((sum, price) => sum + price, 0) / prices.length : 0;
     const types = new Set(valid.map(item => item.typeName).filter(Boolean));
     const periodLabel = dateSelect.options[dateSelect.selectedIndex]?.text || '조회 전';
@@ -311,10 +315,7 @@ function renderTrend(data) {
         return;
     }
 
-    const values = months.map(([, prices]) => {
-        const sorted = [...prices].sort((a, b) => a - b);
-        return sorted[Math.floor((sorted.length - 1) / 2)];
-    });
+    const values = months.map(([, prices]) => calculateMedian(prices));
     const max = Math.max(...values);
     const min = Math.min(...values);
     const span = Math.max(max - min, 1);
@@ -429,15 +430,8 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
             // - comm(상업업무용): 별도 필드 없음 → 법정동+지번 사용
             // - land(토지): 별도 필드 없음 → 법정동+지번 사용
             // - right(분양입주권): aptNm
-            // 주소 복구 로직 (별표 마스킹 우회 시도)
-            let displayJibun = String(item.jibun || '');
-            const bonbun = item.bonbun ? parseInt(item.bonbun) : '';
-            const bubun = item.bubun ? parseInt(item.bubun) : '';
-            
-            // 만약 jibun에 별표가 있고 본번 정보가 있다면 본번-부번으로 주소 재구성
-            if (displayJibun.includes('*') && bonbun) {
-                displayJibun = bubun ? `${bonbun}-${bubun}` : `${bonbun}`;
-            }
+            const location = resolveTransactionLocation(item);
+            const displayJibun = location.jibun;
 
             const name = item.aptNm       // 아파트, 분양입주권
                 || item.mhouseNm    // 연립다세대
@@ -488,8 +482,7 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
             const month = String(item.dealMonth || '01').padStart(2, '0');
             const day = String(item.dealDay || '01').padStart(2, '0');
 
-            const cancelDateValue = item.cdealDay || item.cancelDealDay || item.cancelDate || '';
-            const cancelled = Boolean(item.cdealType || item.cancelDealType || cancelDateValue);
+            const transactionStatus = resolveTransactionStatus(item);
 
             // 층수 포맷팅 (지하층 표시)
             let floorText = item.floor || '-';
@@ -522,10 +515,9 @@ async function fetchSingleType(type, lawdCd, dealYmd) {
                 umdNm: item.umdNm || '',            // 법정동명
                 jibun: displayJibun,                // 복구된 지번 적용
                 buildingType: buildingType,          // 건물 용도
-                cancelled: cancelled,
-                cancelDate: String(cancelDateValue || ''),
+                ...transactionStatus,
                 source: '국토교통부 실거래가 Open API',
-                confidence: '원천 거래 확인'
+                confidence: location.confidence
             };
         });
     } catch (e) {

@@ -57,6 +57,8 @@ describe("Cloudflare frontend", () => {
     expect(script).toContain("국토교통부 실거래가 Open API")
     expect(script).toContain("realEstateTheme")
     expect(script).toContain("setQueryStatus")
+    expect(html).toContain('최근 조회 <b id="update-time">')
+    expect(html).not.toContain('최근 업데이트 <b id="update-time">')
   })
 
   it("preserves the detail action when inline price analysis is toggled", async () => {

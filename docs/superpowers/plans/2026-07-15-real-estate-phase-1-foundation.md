@@ -170,7 +170,7 @@
 
 - 생성: `src/admin-data-status.ts`
 - 생성: `test/admin-data-status.test.ts`
-- 생성: `site/admin.html`, `site/admin.js`, `site/admin.css`
+- 생성: `site/admin/index.html`, `site/admin.js`, `site/admin.css`
 - 생성: `test/admin-frontend.test.ts`
 
 **구현**

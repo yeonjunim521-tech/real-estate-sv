@@ -8,6 +8,15 @@ type MolitPage = {
   readonly totalCount: number
 }
 
+export type MolitPageSnapshot = {
+  readonly pageNo: number
+  readonly payloadJson: string
+  readonly itemCount: number
+  readonly totalCount: number
+}
+
+type PageObserver = (page: MolitPageSnapshot) => void
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
@@ -41,6 +50,40 @@ function deduplicateItems(items: readonly Record<string, unknown>[]): readonly R
   })
 }
 
+function mergePages(pages: readonly MolitPage[]): Record<string, unknown> {
+  const firstPage = pages[0]
+  if (!firstPage) return {}
+  const items = deduplicateItems(pages.flatMap((page) => page.items))
+  return {
+    ...firstPage.payload,
+    response: {
+      ...firstPage.response,
+      body: {
+        ...firstPage.body,
+        items: { item: items },
+        numOfRows: items.length,
+        pageNo: 1,
+        totalCount: firstPage.totalCount,
+      },
+    },
+  }
+}
+
+export function mergeMolitPagePayloads(payloadJsons: readonly string[]): string | undefined {
+  const pages: MolitPage[] = []
+  for (const payloadJson of payloadJsons) {
+    try {
+      const page = parsePage(JSON.parse(payloadJson))
+      if (!page) return undefined
+      pages.push(page)
+    } catch (error: unknown) {
+      if (error instanceof SyntaxError) return undefined
+      throw error
+    }
+  }
+  return pages.length > 0 ? JSON.stringify(mergePages(pages)) : undefined
+}
+
 async function readPage(response: Response): Promise<MolitPage | undefined> {
   try {
     const payload: unknown = await response.clone().json()
@@ -70,12 +113,20 @@ async function fetchPage(
 export async function fetchAllMolitPages(
   url: URL,
   fetchUpstream: typeof fetch,
+  observePage?: PageObserver,
 ): Promise<Response> {
   const firstResponse = await fetchPage(url, 1, fetchUpstream)
   if (!firstResponse.ok) return firstResponse
 
   const firstPage = await readPage(firstResponse)
   if (!firstPage) return firstResponse
+
+  observePage?.({
+    pageNo: 1,
+    payloadJson: JSON.stringify(firstPage.payload),
+    itemCount: firstPage.items.length,
+    totalCount: firstPage.totalCount,
+  })
 
   const pageCount = Math.ceil(firstPage.totalCount / PAGE_SIZE)
   if (pageCount <= 1) return firstResponse
@@ -88,25 +139,17 @@ export async function fetchAllMolitPages(
     const page = await readPage(pageResponse)
     if (!page) return new Response(null, { status: 502 })
     pages.push(page)
+    observePage?.({
+      pageNo,
+      payloadJson: JSON.stringify(page.payload),
+      itemCount: page.items.length,
+      totalCount: page.totalCount,
+    })
   }
 
-  const items = deduplicateItems(pages.flatMap((page) => page.items))
-  const payload = {
-    ...firstPage.payload,
-    response: {
-      ...firstPage.response,
-      body: {
-        ...firstPage.body,
-        items: { item: items },
-        numOfRows: items.length,
-        pageNo: 1,
-        totalCount: firstPage.totalCount,
-      },
-    },
-  }
   const headers = new Headers(firstResponse.headers)
   headers.delete("Content-Length")
-  return new Response(JSON.stringify(payload), {
+  return new Response(JSON.stringify(mergePages(pages)), {
     status: firstResponse.status,
     statusText: firstResponse.statusText,
     headers,

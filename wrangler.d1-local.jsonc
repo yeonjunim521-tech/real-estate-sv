@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "real-estate-sv-local",
+  "main": "./src/worker.ts",
+  "compatibility_date": "2026-07-15",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "real-estate-sv-local",
+      "database_id": "real-estate-sv-d1-foundation-local",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

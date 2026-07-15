@@ -13,6 +13,14 @@
   "secrets": {
     "required": ["DATA_GO_KR_SERVICE_KEY"]
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "real-estate-sv-db",
+      "database_id": "3844b625-14db-48e9-aa92-74065f0f0584",
+      "migrations_dir": "migrations"
+    }
+  ],
   "ratelimits": [
     {
       "name": "API_RATE_LIMITER",

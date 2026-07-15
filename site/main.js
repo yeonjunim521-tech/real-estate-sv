@@ -5,7 +5,7 @@ import { resolveTransactionLocation } from './transaction-location.js';
 import { resolveTransactionStatus } from './transaction-status.js';
 
 /**
- * 부동산 분석 플랫폼 PRO v14 (근본 원인 수정 완료)
+ * 부동산 분석 플랫폼 PRO v15
  *
  * [핵심 수정] API 응답 필드가 한글(아파트, 거래금액)이 아니라
  *             영문(aptNm, dealAmount)이었음 → 전면 수정 완료
@@ -1133,4 +1133,4 @@ renderMetrics([]);
 renderTrend([]);
 renderHistory();
 
-console.log("🚀 부동산 분석 PRO v14 - Cloudflare 통합 모드");
+console.log("🚀 부동산 분석 PRO v15 - Cloudflare 통합 모드");

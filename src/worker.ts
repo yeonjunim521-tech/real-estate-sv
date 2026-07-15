@@ -1,3 +1,5 @@
+import { fetchAllMolitPages } from "./molit-pagination"
+
 const API_ENDPOINTS = {
   apt: "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev",
   rhous: "https://apis.data.go.kr/1613000/RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade",
@@ -123,12 +125,9 @@ export async function handleApiRequest(
   upstreamUrl.searchParams.set("LAWD_CD", lawdCd)
   upstreamUrl.searchParams.set("DEAL_YMD", dealYmd)
   upstreamUrl.searchParams.set("_type", "json")
-  upstreamUrl.searchParams.set("numOfRows", "100")
 
   try {
-    const upstreamResponse = await fetchUpstream(upstreamUrl.toString(), {
-      headers: { Accept: "application/json" },
-    })
+    const upstreamResponse = await fetchAllMolitPages(upstreamUrl, fetchUpstream)
     if (!upstreamResponse.ok) {
       return jsonError("국토부 API 요청이 실패했습니다.", upstreamResponse.status)
     }
